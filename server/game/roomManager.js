@@ -476,6 +476,9 @@ class RoomManager {
         formulaId: taken.formulaId,
         value: taken.value,
         label: taken.label,
+        name: taken.name,
+        nameEn: taken.nameEn,
+        symbol: taken.symbol,
       };
       hand.push(clean);
       room.discardPile.push({ ...syringe, discardedBy: playerId });

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
+import { CardBack, FormulaChip, GameCard } from './components/GameCard';
+import { RulesPanel } from './components/RulesPanel';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
@@ -35,36 +37,53 @@ function getSocket() {
   return socket;
 }
 
-function formulaStyle(formulas, formulaId) {
-  const f = formulas?.find((x) => x.id === formulaId);
-  return {
-    background: f?.color || '#555',
-    color: formulaId === 'D' ? '#222' : '#fff',
-  };
-}
+const SAMPLE_CARDS = [
+  {
+    id: 's1',
+    type: 'number',
+    formulaId: 'A',
+    value: 3,
+    label: '적철독 3',
+    symbol: 'skull',
+    name: '적철독',
+    nameEn: 'Ferric',
+  },
+  {
+    id: 's2',
+    type: 'x',
+    formulaId: 'B',
+    label: '청람독 X',
+    symbol: 'drop',
+    name: '청람독',
+    nameEn: 'Azure',
+  },
+  {
+    id: 's3',
+    type: 'syringe',
+    label: '주사기',
+    symbol: 'syringe',
+  },
+  {
+    id: 's4',
+    type: 'number',
+    formulaId: 'E',
+    value: 1,
+    label: '자정독 1',
+    symbol: 'crystal',
+    name: '자정독',
+    nameEn: 'Violet',
+  },
+];
 
-function CardView({ card, formulas, selected, onClick }) {
-  if (!card) return null;
-  const isSyringe = card.type === 'syringe';
-  const style = isSyringe
-    ? { background: '#2c3e50', color: '#ecf0f1' }
-    : formulaStyle(formulas, card.formulaId);
-
-  return (
-    <button
-      type="button"
-      className={`card ${selected ? 'selected' : ''}`}
-      style={style}
-      onClick={onClick}
-      disabled={!onClick}
-    >
-      <span className="card-label">{card.label}</span>
-      <span className="card-type">
-        {isSyringe ? 'SYRINGE' : card.type === 'x' ? 'TOXIN X' : `NO. ${card.value}`}
-      </span>
-    </button>
-  );
-}
+const SAMPLE_FORMULAS = [
+  { id: 'A', name: '적철독', nameEn: 'Ferric', color: '#8B1E1E', colorSoft: '#F5E6E6', ink: '#4A0F0F', symbol: 'skull' },
+  { id: 'B', name: '청람독', nameEn: 'Azure', color: '#1B4F72', colorSoft: '#E6F0F5', ink: '#0D2A3D', symbol: 'drop' },
+  { id: 'C', name: '녹청독', nameEn: 'Viridian', color: '#1E6B3A', colorSoft: '#E6F5EC', ink: '#0D3A1C', symbol: 'leaf' },
+  { id: 'D', name: '호박독', nameEn: 'Amber', color: '#8B6914', colorSoft: '#F7F1DE', ink: '#4A3808', symbol: 'bio' },
+  { id: 'E', name: '자정독', nameEn: 'Violet', color: '#5B2C6F', colorSoft: '#F0E6F5', ink: '#2E1538', symbol: 'crystal' },
+  { id: 'F', name: '주황독', nameEn: 'Rust', color: '#A04000', colorSoft: '#F8EBE0', ink: '#5A2400', symbol: 'flame' },
+  { id: 'G', name: '청록독', nameEn: 'Teal', color: '#0E6655', colorSoft: '#E0F5F1', ink: '#063D33', symbol: 'molecule' },
+];
 
 export default function App() {
   const [connected, setConnected] = useState(false);
@@ -80,20 +99,27 @@ export default function App() {
   const [tradeTarget, setTradeTarget] = useState('');
   const [syringeMode, setSyringeMode] = useState('discard');
   const [stealTarget, setStealTarget] = useState('');
+  const [discardPick, setDiscardPick] = useState(null);
   const [adminFormula, setAdminFormula] = useState('A');
   const [tradeResponseCard, setTradeResponseCard] = useState(null);
+  const [showRules, setShowRules] = useState(false);
 
-  const persistSession = useCallback((payload) => {
-    if (!payload?.sessionToken) return;
-    const next = {
-      sessionToken: payload.sessionToken,
-      playerId: payload.playerId,
-      roomCode: payload.roomCode || payload.state?.code,
-      name: name.trim(),
-    };
-    saveSession(next);
-    setSession(next);
-  }, [name]);
+  const formulas = state?.formulas?.length ? state.formulas : SAMPLE_FORMULAS;
+
+  const persistSession = useCallback(
+    (payload) => {
+      if (!payload?.sessionToken) return;
+      const next = {
+        sessionToken: payload.sessionToken,
+        playerId: payload.playerId,
+        roomCode: payload.roomCode || payload.state?.code,
+        name: name.trim(),
+      };
+      saveSession(next);
+      setSession(next);
+    },
+    [name]
+  );
 
   const clearSessionLocal = useCallback(() => {
     saveSession(null);
@@ -105,12 +131,6 @@ export default function App() {
     (res) => {
       if (!res?.ok) {
         setError(res?.error || '요청 실패');
-        if (res?.error && /세션|방|만료/.test(res.error)) {
-          // stale session
-          if (res.error.includes('세션') || res.error.includes('방')) {
-            // keep name; clear only if reconnect failed hard
-          }
-        }
         return false;
       }
       if (res.sessionToken) persistSession(res);
@@ -125,7 +145,7 @@ export default function App() {
     const s = loadSession();
     if (!s?.sessionToken) return;
     setReconnecting(true);
-    setInfo('이전 세션으로 재접속 중…');
+    setInfo('이전 자리로 재접속하는 중…');
     getSocket().emit('reconnectSession', { sessionToken: s.sessionToken }, (res) => {
       setReconnecting(false);
       if (!res?.ok) {
@@ -135,9 +155,9 @@ export default function App() {
         setSession(null);
         return;
       }
-      setInfo('재접속되었습니다.');
+      setInfo('테이블로 돌아왔습니다.');
       applyAck(res);
-      setTimeout(() => setInfo(''), 2500);
+      setTimeout(() => setInfo(''), 2200);
     });
   }, [applyAck]);
 
@@ -145,9 +165,7 @@ export default function App() {
     const s = getSocket();
     const onConnect = () => {
       setConnected(true);
-      // Auto rejoin seat after socket reconnect
-      const sess = loadSession();
-      if (sess?.sessionToken) tryReconnect();
+      if (loadSession()?.sessionToken) tryReconnect();
     };
     const onDisconnect = () => {
       setConnected(false);
@@ -165,13 +183,18 @@ export default function App() {
       setConnected(true);
       if (loadSession()?.sessionToken) tryReconnect();
     }
-
     return () => {
       s.off('connect', onConnect);
       s.off('disconnect', onDisconnect);
       s.off('gameState', onState);
     };
   }, [tryReconnect]);
+
+  useEffect(() => {
+    setSelectedCardId(null);
+    setDiscardPick(null);
+    setTradeResponseCard(null);
+  }, [state?.turnPlayerId, state?.status]);
 
   const saveName = (n) => {
     setName(n);
@@ -194,27 +217,25 @@ export default function App() {
   const leaveRoom = () => {
     getSocket().emit('leaveRoom', () => {
       clearSessionLocal();
-      setInfo('방에서 나갔습니다.');
+      setInfo('테이블에서 일어났습니다.');
     });
   };
 
-  const startGame = () => getSocket().emit('startGame', (res) => applyAck(res) || null);
+  const startGame = () => getSocket().emit('startGame', (res) => applyAck(res));
 
-  const others = useMemo(
-    () => (state?.players || []).filter((p) => !p.isMe),
-    [state]
-  );
+  const others = useMemo(() => (state?.players || []).filter((p) => !p.isMe), [state]);
+  const me = useMemo(() => (state?.players || []).find((p) => p.isMe), [state]);
 
   const doDiscard = () => {
-    if (!selectedCardId) return setError('버릴 카드를 선택하세요.');
+    if (!selectedCardId) return setError('버릴 카드를 손패에서 고르세요.');
     getSocket().emit('discard', { cardId: selectedCardId }, (res) => {
       if (applyAck(res)) setSelectedCardId(null);
     });
   };
 
   const doTrade = () => {
-    if (!selectedCardId) return setError('제안할 카드를 선택하세요.');
-    if (!tradeTarget) return setError('거래 상대를 선택하세요.');
+    if (!selectedCardId) return setError('상대에게 줄 카드를 고르세요.');
+    if (!tradeTarget) return setError('거래 상대를 고르세요.');
     getSocket().emit('proposeTrade', { toId: tradeTarget, offerCardId: selectedCardId }, (res) =>
       applyAck(res)
     );
@@ -222,9 +243,17 @@ export default function App() {
 
   const doSyringe = () => {
     if (syringeMode === 'discard') {
-      getSocket().emit('useSyringe', { mode: 'discard' }, (res) => applyAck(res));
+      const idx =
+        discardPick != null
+          ? discardPick
+          : state?.discardPile?.length
+            ? state.discardPile.length - 1
+            : undefined;
+      getSocket().emit('useSyringe', { mode: 'discard', discardIndex: idx }, (res) => {
+        if (applyAck(res)) setDiscardPick(null);
+      });
     } else {
-      if (!stealTarget) return setError('훔칠 대상을 선택하세요.');
+      if (!stealTarget) return setError('훔칠 대상을 고르세요.');
       getSocket().emit(
         'useSyringe',
         { mode: 'steal', targetPlayerId: stealTarget },
@@ -234,12 +263,19 @@ export default function App() {
   };
 
   const doAdminister = () => {
-    if (!window.confirm(`공식 ${adminFormula}로 해독제를 투여할까요? 게임이 종료됩니다.`)) return;
+    const f = formulas.find((x) => x.id === adminFormula);
+    const label = f ? f.name : adminFormula;
+    if (
+      !window.confirm(
+        `「${label}」이(가) 해독제라고 확신합니까?\n투여하는 순간 한 판이 끝나고, 진짜 해독제 공식 카드를 든 사람만 생존합니다.`
+      )
+    )
+      return;
     getSocket().emit('administer', { formulaId: adminFormula }, (res) => applyAck(res));
   };
 
   const acceptTrade = () => {
-    if (!tradeResponseCard) return setError('내줄 카드를 선택하세요.');
+    if (!tradeResponseCard) return setError('상대에게 내줄 카드를 고르세요.');
     getSocket().emit(
       'respondTrade',
       { accept: true, responseCardId: tradeResponseCard },
@@ -253,454 +289,634 @@ export default function App() {
     getSocket().emit('respondTrade', { accept: false }, (res) => applyAck(res));
   const cancelTrade = () => getSocket().emit('cancelTrade', (res) => applyAck(res));
 
-  const leaveBar = state ? (
-    <button type="button" className="ghost leave" onClick={leaveRoom}>
-      방 나가기
-    </button>
-  ) : null;
+  const copyCode = (code) => {
+    navigator.clipboard?.writeText(code);
+    setInfo('방 코드를 복사했습니다.');
+    setTimeout(() => setInfo(''), 1500);
+  };
 
-  // —— Landing ——
+  // ═══════════ LANDING ═══════════
   if (!state) {
     return (
-      <div className="app shell">
-        <header className="hero">
-          <p className="badge">멀티플레이 · 방 코드 · 재접속</p>
-          <h1>
-            해독제 <span>Antidote</span>
-          </h1>
-          <p className="sub">
-            독이 퍼지는 실험실. 숨겨진 해독제 공식을 추론하고, 게임이 끝날 때 그 공식 카드를 손에
-            들고 생존하세요.
-          </p>
-          <p className={`conn ${connected ? 'ok' : ''}`}>
-            {connected ? '서버 연결됨' : '서버 연결 중…'}
-            {reconnecting ? ' · 재접속 중' : ''}
-          </p>
-          {info && <p className="info">{info}</p>}
-        </header>
-
-        {session?.sessionToken && (
-          <div className="panel resume-panel">
-            <h2>이전 세션</h2>
-            <p className="muted">
-              방 <strong>{session.roomCode || '?'}</strong> 에 다시 들어갈 수 있습니다.
+      <div className="app app--landing">
+        <div className="wrap">
+          <header className="landing-hero">
+            <p className="landing-hero__badge">Tabletop multiplayer</p>
+            <h1>
+              해독제 <em>Antidote</em>
+            </h1>
+            <p className="landing-hero__lead">
+              실험실에 독이 퍼졌습니다. 일곱 가지 독 중 하나만 진짜 해독제입니다. 카드를 읽고,
+              거래를 하고, 거짓말을 걸러낸 뒤 — 살아남으세요.
             </p>
-            <div className="row">
-              <button type="button" className="primary" onClick={tryReconnect} disabled={!connected}>
-                재접속
-              </button>
-              <button type="button" onClick={clearSessionLocal}>
-                세션 삭제
-              </button>
+            <div className={`conn-pill ${connected ? 'is-on' : ''}`}>
+              <span className="conn-pill__dot" />
+              {connected ? '서버 연결됨' : '서버 연결 중…'}
+              {reconnecting ? ' · 재접속' : ''}
+            </div>
+          </header>
+
+          <div className="sample-hand" aria-hidden>
+            {SAMPLE_CARDS.map((c) => (
+              <GameCard key={c.id} card={c} formulas={SAMPLE_FORMULAS} size="md" />
+            ))}
+          </div>
+
+          <div className="formula-strip">
+            {SAMPLE_FORMULAS.map((f) => (
+              <FormulaChip key={f.id} formula={f} size="sm" />
+            ))}
+          </div>
+
+          <div className="landing-grid">
+            <div>
+              {session?.sessionToken && (
+                <div className="panel panel--dark" style={{ marginBottom: '1rem' }}>
+                  <h2>이어하기</h2>
+                  <p style={{ margin: '0 0 0.75rem', opacity: 0.75, fontSize: '0.9rem' }}>
+                    방 코드 <strong style={{ letterSpacing: '0.15em' }}>{session.roomCode || '?'}</strong>
+                  </p>
+                  <div className="btn-row">
+                    <button type="button" className="btn btn--gold" onClick={tryReconnect} disabled={!connected}>
+                      테이블로 돌아가기
+                    </button>
+                    <button type="button" className="btn btn--ghost" onClick={clearSessionLocal}>
+                      세션 삭제
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="panel">
+                <h2>테이블 잡기</h2>
+                <label>
+                  닉네임
+                  <input
+                    value={name}
+                    maxLength={16}
+                    onChange={(e) => saveName(e.target.value)}
+                    placeholder="표시 이름"
+                    autoComplete="nickname"
+                  />
+                </label>
+                <button type="button" className="btn btn--primary" onClick={createRoom} disabled={!connected}>
+                  새 방 만들기
+                </button>
+                <div className="divider">또는 코드로 합류</div>
+                <label>
+                  방 코드
+                  <input
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    placeholder="ABCD"
+                    maxLength={6}
+                    autoCapitalize="characters"
+                  />
+                </label>
+                <button type="button" className="btn" onClick={joinRoom} disabled={!connected} style={{ width: '100%' }}>
+                  입장
+                </button>
+                {error && <p className="msg-error">{error}</p>}
+                {info && <p className="msg-info">{info}</p>}
+              </div>
+            </div>
+
+            <div className="panel">
+              <RulesPanel />
             </div>
           </div>
-        )}
 
-        <div className="panel lobby-panel">
-          <label>
-            닉네임
-            <input
-              value={name}
-              maxLength={16}
-              onChange={(e) => saveName(e.target.value)}
-              placeholder="표시 이름"
-            />
-          </label>
-
-          <div className="row">
-            <button type="button" className="primary" onClick={createRoom} disabled={!connected}>
-              방 만들기
-            </button>
-          </div>
-
-          <div className="divider">또는 입장</div>
-
-          <label>
-            방 코드
-            <input
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="예: AB3K"
-              maxLength={6}
-            />
-          </label>
-          <button type="button" onClick={joinRoom} disabled={!connected}>
-            입장하기
-          </button>
-
-          {error && <p className="error">{error}</p>}
+          <p className="fine">
+            학습용 웹 구현 · 원작 Bellwether Games Antidote · 인쇄용 카드 식별(색·심볼·이름) 기준
+            디자인
+          </p>
         </div>
-
-        <section className="howto panel">
-          <h2>간단한 규칙</h2>
-          <ol>
-            <li>7개 공식 중 하나가 진짜 해독제입니다. (서버만 알고 있음)</li>
-            <li>
-              손에 <strong>X 카드</strong>가 있으면 그 공식은 해독제가 <em>아닙니다</em>.
-            </li>
-            <li>
-              턴마다: <strong>버리기</strong> · <strong>거래</strong> · <strong>주사기</strong> ·
-              확신이 있으면 <strong>해독제 투여(종료)</strong>
-            </li>
-            <li>종료 시 진짜 해독제 공식 카드(숫자 또는 X)를 가진 사람이 생존합니다.</li>
-            <li>새로고침해도 같은 브라우저면 세션으로 재접속됩니다.</li>
-          </ol>
-          <p className="fine">학습용 규칙 구현 · 원작 Bellwether Games Antidote</p>
-        </section>
       </div>
     );
   }
 
-  // —— Lobby ——
+  // ═══════════ LOBBY ═══════════
   if (state.status === 'lobby') {
     const iAmHost = state.hostId === state.me;
     return (
-      <div className="app shell">
-        <header className="topbar">
-          <h1>대기실</h1>
-          <div className="code-chip">
-            방 코드 <strong>{state.code}</strong>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => navigator.clipboard?.writeText(state.code)}
-            >
-              복사
-            </button>
+      <div className="app lobby-shell">
+        <div className="wrap">
+          <div className="table-topbar" style={{ borderRadius: 12, marginBottom: '1rem' }}>
+            <div>
+              <h1>대기실</h1>
+            </div>
+            <div className="table-topbar__meta">
+              <span className="room-code">{state.code}</span>
+              <button type="button" className="btn btn--ghost" onClick={() => copyCode(state.code)}>
+                코드 복사
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={leaveRoom}>
+                나가기
+              </button>
+            </div>
           </div>
-          {leaveBar}
-        </header>
 
-        <div className="panel">
-          <h2>플레이어 ({state.players.length}/6)</h2>
-          <ul className="player-list">
-            {state.players.map((p) => (
-              <li key={p.id}>
-                {p.name}
-                {p.isHost ? ' · 호스트' : ''}
-                {p.isMe ? ' (나)' : ''}
-                {!p.connected ? ' · 오프라인' : ''}
-              </li>
-            ))}
-          </ul>
-          {iAmHost ? (
-            <button
-              type="button"
-              className="primary"
-              onClick={startGame}
-              disabled={state.players.filter((p) => p.connected).length < 2}
-            >
-              게임 시작 (접속 2명 이상)
-            </button>
-          ) : (
-            <p className="muted">호스트가 시작하기를 기다리는 중…</p>
-          )}
-          {error && <p className="error">{error}</p>}
-          {info && <p className="info">{info}</p>}
-        </div>
-
-        <div className="log panel">
-          <h3>로그</h3>
-          <ul>
-            {(state.log || []).map((l, i) => (
-              <li key={i}>{l.message}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    );
-  }
-
-  // —— Ended ——
-  if (state.status === 'ended') {
-    const iWon = (state.winners || []).includes(state.me);
-    return (
-      <div className="app shell">
-        <header className="hero end">
-          <h1>{iWon ? '생존!' : '실험 종료'}</h1>
-          <p>
-            진짜 해독제 공식:{' '}
-            <strong style={formulaStyle(state.formulas, state.antidoteFormulaId)}>
-              {' '}
-              {state.antidoteFormulaId}{' '}
-            </strong>
-          </p>
-          <p>생존자: {state.winnerNames?.length ? state.winnerNames.join(', ') : '없음'}</p>
-        </header>
-        <div className="panel">
-          <h2>모든 손패 공개</h2>
-          {state.players.map((p) => (
-            <div key={p.id} className="reveal-block">
-              <h3>
-                {p.name}
-                {(state.winners || []).includes(p.id) ? ' ✓' : ''}
-              </h3>
-              <div className="hand">
-                {(state.allHands?.[p.id] || []).map((c) => (
-                  <CardView key={c.id} card={c} formulas={state.formulas} />
+          <div className="landing-grid">
+            <div className="panel panel--dark">
+              <h2>좌석 ({state.players.length}/6)</h2>
+              <div className="player-seats">
+                {state.players.map((p) => (
+                  <div key={p.id} className={`seat ${p.isHost ? 'is-host' : ''}`}>
+                    <div className="seat__avatar">{(p.name || '?')[0]}</div>
+                    <div className="seat__meta">
+                      <strong>
+                        {p.name}
+                        {p.isMe ? ' (나)' : ''}
+                      </strong>
+                      <span>
+                        {p.isHost ? '호스트 · ' : ''}
+                        {p.connected ? '접속 중' : '오프라인'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {iAmHost ? (
+                <button
+                  type="button"
+                  className="btn btn--gold"
+                  onClick={startGame}
+                  disabled={state.players.filter((p) => p.connected).length < 2}
+                >
+                  카드 나누고 시작 (접속 2명+)
+                </button>
+              ) : (
+                <p style={{ opacity: 0.65, margin: 0 }}>호스트가 판을 열기를 기다리는 중…</p>
+              )}
+              {error && <p className="msg-error">{error}</p>}
+              {info && <p className="msg-info">{info}</p>}
+            </div>
+            <div className="panel">
+              <RulesPanel compact />
+              <div className="sample-hand" style={{ marginTop: '1rem' }}>
+                {SAMPLE_CARDS.slice(0, 3).map((c) => (
+                  <GameCard key={c.id} card={c} formulas={formulas} size="sm" />
                 ))}
               </div>
             </div>
-          ))}
-          <button
-            type="button"
-            className="primary"
-            onClick={() => {
-              leaveRoom();
-            }}
-          >
-            로비로 나가기
-          </button>
-        </div>
-        <div className="log panel">
-          <ul>
-            {(state.log || []).map((l, i) => (
-              <li key={i}>{l.message}</li>
-            ))}
-          </ul>
+          </div>
+
+          <div className="log-rail" style={{ marginTop: '1rem' }}>
+            <div className="log-rail__inner">
+              <ul>
+                {(state.log || []).map((l, i) => (
+                  <li key={i}>{l.message}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // —— Playing ——
+  // ═══════════ ENDED ═══════════
+  if (state.status === 'ended') {
+    const iWon = (state.winners || []).includes(state.me);
+    const trueF = formulas.find((f) => f.id === state.antidoteFormulaId);
+    return (
+      <div className="app end-screen">
+        <div className="wrap">
+          <header className="end-screen__hero">
+            <h1 className={iWon ? 'is-win' : ''}>{iWon ? '생존' : '실험 종료'}</h1>
+            <p style={{ opacity: 0.75, margin: 0 }}>봉인되어 있던 진짜 해독제</p>
+            <div className="end-reveal">
+              {trueF && (
+                <GameCard
+                  size="xl"
+                  formulas={formulas}
+                  card={{
+                    id: 'reveal',
+                    type: 'x',
+                    formulaId: trueF.id,
+                    label: trueF.name,
+                    symbol: trueF.symbol,
+                    name: trueF.name,
+                    nameEn: trueF.nameEn,
+                  }}
+                />
+              )}
+            </div>
+            <p>
+              생존자:{' '}
+              <strong>{state.winnerNames?.length ? state.winnerNames.join(', ') : '없음'}</strong>
+            </p>
+          </header>
+
+          <div className="panel hands-reveal">
+            <h2 style={{ fontFamily: 'var(--font-display)', marginTop: 0 }}>모든 손패 공개</h2>
+            {state.players.map((p) => (
+              <div
+                key={p.id}
+                className={`hands-reveal__block ${(state.winners || []).includes(p.id) ? 'is-winner' : ''}`}
+              >
+                <h3>
+                  {p.name}
+                  {p.isMe ? ' (나)' : ''}
+                </h3>
+                <div className="hand-fan" style={{ minHeight: 0, justifyContent: 'flex-start' }}>
+                  {(state.allHands?.[p.id] || []).map((c) => (
+                    <GameCard key={c.id} card={c} formulas={formulas} size="sm" />
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button type="button" className="btn btn--primary" onClick={leaveRoom}>
+              로비로 나가기
+            </button>
+          </div>
+
+          <div className="log-rail" style={{ marginTop: '1rem' }}>
+            <div className="log-rail__inner">
+              <ul>
+                {(state.log || []).map((l, i) => (
+                  <li key={i}>{l.message}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════ PLAYING ═══════════
   const turnName = state.players.find((p) => p.id === state.turnPlayerId)?.name || '?';
+  const hasSyringe = (state.myHand || []).some((c) => c.type === 'syringe');
 
   return (
-    <div className="app shell playing">
-      <header className="topbar">
+    <div className="app app--table">
+      <header className="table-topbar">
         <div>
-          <span className="code-mini">{state.code}</span>
-          <h1>해독제</h1>
+          <h1>해독제 · 실험 테이블</h1>
         </div>
-        <div className="topbar-right">
-          <div className={`turn-pill ${state.isMyTurn ? 'mine' : ''}`}>
-            {state.isMyTurn ? '내 턴' : `${turnName} 님의 턴`}
+        <div className="table-topbar__meta">
+          <span className="room-code">{state.code}</span>
+          <div className={`turn-badge ${state.isMyTurn ? 'is-mine' : ''}`}>
+            {state.isMyTurn ? '당신 차례' : `${turnName} 차례`}
           </div>
-          {leaveBar}
+          <button type="button" className="btn btn--ghost" onClick={() => setShowRules((v) => !v)}>
+            규칙
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={leaveRoom}>
+            나가기
+          </button>
         </div>
       </header>
 
-      {!connected && <p className="error banner">오프라인 — 재연결 중… 손패는 서버에 보존됩니다.</p>}
-      {error && <p className="error banner">{error}</p>}
-      {info && <p className="info banner">{info}</p>}
+      {!connected && (
+        <div className="banner banner--warn">오프라인 — 손패는 서버에 보존됩니다. 재연결 중…</div>
+      )}
+      {error && (
+        <div className="banner banner--error" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
+          {error}
+        </div>
+      )}
+      {info && (
+        <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
+          {info}
+        </div>
+      )}
+
+      {showRules && (
+        <div className="modal-backdrop" onClick={() => setShowRules(false)} role="presentation">
+          <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog">
+            <RulesPanel />
+            <button type="button" className="btn btn--primary" style={{ marginTop: '1rem' }} onClick={() => setShowRules(false)}>
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
 
       {state.pendingTrade?.amTarget && (
-        <div className="panel trade-modal">
-          <h2>거래 제안</h2>
-          <p>
-            {state.pendingTrade.fromName}님이 교환을 제안했습니다.
+        <div className="modal-backdrop">
+          <div className="modal" role="dialog" aria-labelledby="trade-title">
+            <h2 id="trade-title">거래 제안</h2>
+            <p>
+              <strong>{state.pendingTrade.fromName}</strong> 님이 카드 교환을 제안했습니다.
+            </p>
             {state.pendingTrade.offerCard && (
-              <>
-                {' '}
-                제안 카드: <strong>{state.pendingTrade.offerCard.label}</strong>
-              </>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '0.75rem 0' }}>
+                <GameCard card={state.pendingTrade.offerCard} formulas={formulas} size="lg" />
+              </div>
             )}
-          </p>
-          <p>내줄 카드를 고른 뒤 수락하세요.</p>
-          <div className="hand">
-            {state.myHand.map((c) => (
-              <CardView
-                key={c.id}
-                card={c}
-                formulas={state.formulas}
-                selected={tradeResponseCard === c.id}
-                onClick={() => setTradeResponseCard(c.id)}
-              />
-            ))}
-          </div>
-          <div className="row">
-            <button type="button" className="primary" onClick={acceptTrade}>
-              수락
-            </button>
-            <button type="button" onClick={rejectTrade}>
-              거절
-            </button>
+            <p>당신이 내줄 카드를 고른 뒤 수락하세요. (거절하면 상대 턴이 유지됩니다.)</p>
+            <div className="hand-fan" style={{ minHeight: 0 }}>
+              {state.myHand.map((c) => (
+                <GameCard
+                  key={c.id}
+                  card={c}
+                  formulas={formulas}
+                  size="md"
+                  selected={tradeResponseCard === c.id}
+                  onClick={() => setTradeResponseCard(c.id)}
+                />
+              ))}
+            </div>
+            <div className="btn-row" style={{ marginTop: '1rem' }}>
+              <button type="button" className="btn btn--primary" style={{ flex: 1 }} onClick={acceptTrade}>
+                수락 · 교환
+              </button>
+              <button type="button" className="btn" onClick={rejectTrade}>
+                거절
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {state.pendingTrade?.amProposer && (
-        <div className="panel">
-          <p>{state.pendingTrade.toName}님의 응답 대기 중…</p>
-          <button type="button" onClick={cancelTrade}>
+        <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
+          {state.pendingTrade.toName} 님의 응답을 기다리는 중…
+          <button type="button" className="btn btn--ghost-ink" style={{ marginLeft: 8 }} onClick={cancelTrade}>
             제안 취소
           </button>
         </div>
       )}
 
-      <section className="panel">
-        <h2>플레이어</h2>
-        <ul className="player-list compact">
-          {state.players.map((p) => (
-            <li key={p.id} className={p.id === state.turnPlayerId ? 'active-turn' : ''}>
-              {p.name} · {p.handCount}장
-              {p.isMe ? ' (나)' : ''}
-              {!p.connected ? ' · 오프라인' : ''}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="panel">
-        <h2>버린 카드 ({state.discardPile.length})</h2>
-        <div className="hand wrap">
-          {state.discardPile.length === 0 && <p className="muted">없음</p>}
-          {state.discardPile.map((c) => (
-            <CardView key={c.id + c.label} card={c} formulas={state.formulas} />
-          ))}
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>내 손패</h2>
-        {state.eliminatedFormulas?.length > 0 && (
-          <p className="hint">
-            손에 있는 X로 제외된 공식: {state.eliminatedFormulas.join(', ')} (해독제 아님)
-          </p>
-        )}
-        <div className="hand">
-          {state.myHand.map((c) => (
-            <CardView
-              key={c.id}
-              card={c}
-              formulas={state.formulas}
-              selected={selectedCardId === c.id}
-              onClick={
-                state.isMyTurn && !state.pendingTrade
-                  ? () => setSelectedCardId(c.id)
-                  : undefined
-              }
-            />
-          ))}
-        </div>
-      </section>
-
-      {state.isMyTurn && !state.pendingTrade && (
-        <section className="panel actions">
-          <h2>행동</h2>
-          <div className="tabs">
-            {[
-              ['discard', '버리기'],
-              ['trade', '거래'],
-              ['syringe', '주사기'],
-              ['administer', '해독제 투여'],
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={action === id ? 'tab on' : 'tab'}
-                onClick={() => setAction(id)}
+      {/* Felt table */}
+      <div className="felt">
+        <p className="felt__section-label">상대 연구자</p>
+        <div className="opponents">
+          {others.map((p) => {
+            const n = Math.min(3, Math.max(1, p.handCount || 0));
+            return (
+              <div
+                key={p.id}
+                className={`opponent ${p.id === state.turnPlayerId ? 'is-turn' : ''} ${!p.connected ? 'is-offline' : ''}`}
               >
-                {label}
-              </button>
+                <div className="opponent__name">
+                  {p.name}
+                  <small>
+                    {p.handCount}장{!p.connected ? ' · 오프라인' : ''}
+                  </small>
+                </div>
+                <div className="opponent__pile">
+                  {Array.from({ length: n }).map((_, i) => (
+                    <CardBack key={i} size="sm" />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {others.length === 0 && (
+            <p className="empty-discard">다른 플레이어가 없습니다.</p>
+          )}
+        </div>
+
+        <p className="felt__section-label">공유 영역</p>
+        <div className="shared-zone">
+          <div className="box-token" title="봉인된 해독제">
+            <strong>SEALED</strong>
+            <strong>ANTIDOTE</strong>
+            <span>내용 미공개</span>
+          </div>
+          <div className="discard-well">
+            <p className="felt__section-label" style={{ marginBottom: 6 }}>
+              버린 카드 · {state.discardPile.length}장
+              {action === 'syringe' && syringeMode === 'discard' && state.isMyTurn
+                ? ' · 가져올 카드 터치'
+                : ''}
+            </p>
+            <div
+              className={`discard-row ${
+                action === 'syringe' && syringeMode === 'discard' && state.isMyTurn
+                  ? 'discard-row--pick'
+                  : ''
+              }`}
+            >
+              {state.discardPile.length === 0 && (
+                <p className="empty-discard">아직 공개된 연구 없음</p>
+              )}
+              {state.discardPile.map((c, i) => (
+                <GameCard
+                  key={`${c.id}-${i}`}
+                  card={c}
+                  formulas={formulas}
+                  size="sm"
+                  selected={discardPick === i}
+                  onClick={
+                    action === 'syringe' && syringeMode === 'discard' && state.isMyTurn
+                      ? () => setDiscardPick(i)
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Formula legend */}
+      <div className="legend-bar">
+        {formulas.map((f) => (
+          <FormulaChip
+            key={f.id}
+            formula={f}
+            eliminated={(state.eliminatedFormulas || []).includes(f.id)}
+            size="sm"
+          />
+        ))}
+      </div>
+
+      {/* My hand */}
+      <div className="hand-dock">
+        <div className="hand-dock__panel">
+          <div className="hand-dock__head">
+            <h2>내 손패 · {me?.name || '나'}</h2>
+            <span className="hand-dock__hint">
+              {state.isMyTurn
+                ? '카드를 고른 뒤 아래 행동을 선택하세요'
+                : '다른 연구자의 차례 — 버린 카드를 관찰하세요'}
+            </span>
+          </div>
+          <div className="hand-fan">
+            {(state.myHand || []).map((c) => (
+              <GameCard
+                key={c.id}
+                card={c}
+                formulas={formulas}
+                size="md"
+                selected={selectedCardId === c.id}
+                onClick={
+                  state.isMyTurn && !state.pendingTrade
+                    ? () => setSelectedCardId(c.id)
+                    : undefined
+                }
+              />
             ))}
           </div>
-
-          {action === 'discard' && (
-            <div>
-              <p className="muted">카드를 선택한 뒤 버립니다. (공개 더미로 감)</p>
-              <button type="button" className="primary" onClick={doDiscard}>
-                선택한 카드 버리기
-              </button>
+          {(state.eliminatedFormulas || []).length > 0 && (
+            <div className="elim-row">
+              <span className="elim-row__label">손의 X로 배제한 독 (해독제 아님)</span>
+              {formulas
+                .filter((f) => state.eliminatedFormulas.includes(f.id))
+                .map((f) => (
+                  <FormulaChip key={f.id} formula={f} eliminated size="sm" />
+                ))}
             </div>
           )}
+        </div>
+      </div>
 
-          {action === 'trade' && (
-            <div>
-              <p className="muted">내가 줄 카드를 고르고 상대를 선택합니다.</p>
-              <label>
-                상대
-                <select value={tradeTarget} onChange={(e) => setTradeTarget(e.target.value)}>
-                  <option value="">선택…</option>
-                  {others
-                    .filter((p) => p.connected)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <button type="button" className="primary" onClick={doTrade}>
-                거래 제안
-              </button>
+      {/* Actions */}
+      {state.isMyTurn && !state.pendingTrade && (
+        <div className="console">
+          <div className="console__panel">
+            <div className="console__tabs">
+              {[
+                ['discard', '버리기'],
+                ['trade', '거래'],
+                ['syringe', '주사기'],
+                ['administer', '해독제 투여'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`btn ${action === id ? 'is-on' : ''}`}
+                  onClick={() => setAction(id)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-          )}
 
-          {action === 'syringe' && (
-            <div>
-              <p className="muted">손의 주사기를 사용합니다.</p>
-              <div className="tabs">
-                <button
-                  type="button"
-                  className={syringeMode === 'discard' ? 'tab on' : 'tab'}
-                  onClick={() => setSyringeMode('discard')}
-                >
-                  버린 카드 가져오기
+            {action === 'discard' && (
+              <>
+                <p className="console__help">
+                  선택한 카드를 <strong>공개 더미</strong>에 버립니다. 모두가 내용을 봅니다. 정보와
+                  동시에 손에서 잃는 트레이드오프입니다.
+                </p>
+                <button type="button" className="btn btn--primary" onClick={doDiscard}>
+                  선택한 카드 공개 버리기
                 </button>
-                <button
-                  type="button"
-                  className={syringeMode === 'steal' ? 'tab on' : 'tab'}
-                  onClick={() => setSyringeMode('steal')}
-                >
-                  상대 손패 훔치기
-                </button>
-              </div>
-              {syringeMode === 'steal' && (
+              </>
+            )}
+
+            {action === 'trade' && (
+              <>
+                <p className="console__help">
+                  손에서 줄 카드를 고른 뒤, 접속 중인 상대를 지정합니다. 상대가 수락하면 카드가
+                  맞교환됩니다.
+                </p>
                 <label>
-                  대상
-                  <select value={stealTarget} onChange={(e) => setStealTarget(e.target.value)}>
+                  거래 상대
+                  <select value={tradeTarget} onChange={(e) => setTradeTarget(e.target.value)}>
                     <option value="">선택…</option>
-                    {others.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
+                    {others
+                      .filter((p) => p.connected)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.handCount}장)
+                        </option>
+                      ))}
                   </select>
                 </label>
-              )}
-              <button type="button" className="primary" onClick={doSyringe}>
-                주사기 사용
-              </button>
-            </div>
-          )}
+                <button type="button" className="btn btn--primary" onClick={doTrade}>
+                  거래 제안하기
+                </button>
+              </>
+            )}
 
-          {action === 'administer' && (
-            <div>
-              <p className="muted">
-                확신이 들 때 투여하세요. 게임이 끝나고, <strong>진짜</strong> 해독제 공식 카드를
-                가진 사람이 생존합니다.
-              </p>
-              <label>
-                내가 믿는 공식
-                <select value={adminFormula} onChange={(e) => setAdminFormula(e.target.value)}>
-                  {(state.formulas || []).map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
+            {action === 'syringe' && (
+              <>
+                <p className="console__help">
+                  손의 <strong>주사기</strong>를 소모합니다.
+                  {hasSyringe
+                    ? ' 버린 카드 더미에서 고르거나, 상대 손패를 무작위로 훔칩니다.'
+                    : ' — 지금 손에 주사기가 없습니다.'}
+                </p>
+                <div className="console__tabs">
+                  <button
+                    type="button"
+                    className={`btn ${syringeMode === 'discard' ? 'is-on' : ''}`}
+                    onClick={() => setSyringeMode('discard')}
+                  >
+                    버린 카드 가져오기
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn ${syringeMode === 'steal' ? 'is-on' : ''}`}
+                    onClick={() => setSyringeMode('steal')}
+                  >
+                    상대 손 훔치기
+                  </button>
+                </div>
+                {syringeMode === 'steal' && (
+                  <label>
+                    대상
+                    <select value={stealTarget} onChange={(e) => setStealTarget(e.target.value)}>
+                      <option value="">선택…</option>
+                      {others.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.handCount}장)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {syringeMode === 'discard' && (
+                  <p className="console__help">
+                    위 버린 카드 중 하나를 터치해 고르세요. 고르지 않으면 가장 최근 카드입니다.
+                    {discardPick != null ? ` (선택 #${discardPick + 1})` : ''}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={doSyringe}
+                  disabled={!hasSyringe}
+                >
+                  주사기 사용
+                </button>
+              </>
+            )}
+
+            {action === 'administer' && (
+              <>
+                <p className="console__help">
+                  확신이 들 때만 사용하세요. 게임이 <strong>즉시 종료</strong>되고, 당신이 고른
+                  독이 아니라 <strong>진짜 봉인된 해독제</strong> 카드를 든 사람이 생존합니다.
+                </p>
+                <div className="formula-strip" style={{ justifyContent: 'flex-start', margin: '0 0 0.75rem' }}>
+                  {formulas.map((f) => (
+                    <FormulaChip
+                      key={f.id}
+                      formula={f}
+                      selected={adminFormula === f.id}
+                      eliminated={(state.eliminatedFormulas || []).includes(f.id)}
+                      onClick={() => setAdminFormula(f.id)}
+                      size="md"
+                    />
                   ))}
-                </select>
-              </label>
-              <button type="button" className="danger" onClick={doAdminister}>
-                해독제 투여 (게임 종료)
-              </button>
-            </div>
-          )}
-        </section>
+                </div>
+                <button type="button" className="btn btn--danger" onClick={doAdminister}>
+                  해독제 투여 · 판 종료
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
-      <section className="log panel">
-        <h3>이벤트</h3>
-        <ul>
-          {(state.log || [])
-            .slice()
-            .reverse()
-            .map((l, i) => (
-              <li key={i}>{l.message}</li>
-            ))}
-        </ul>
-      </section>
+      <div className="log-rail">
+        <div className="log-rail__inner">
+          <ul>
+            {(state.log || [])
+              .slice()
+              .reverse()
+              .map((l, i) => (
+                <li key={i}>{l.message}</li>
+              ))}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }

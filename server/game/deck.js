@@ -1,18 +1,92 @@
 /**
  * Antidote-style deck (learning clone of Bellwether Games rules).
- * Formulas: 7 colors, each with number cards 1..N and one X (toxin marker).
- * One X is the hidden antidote; remaining X + syringes seed hands.
+ * Seven toxin formulas: number ranks + one X each. One X is the sealed antidote.
  */
 
 const FORMULAS = [
-  { id: 'A', name: 'A', color: '#e74c3c' },
-  { id: 'B', name: 'B', color: '#3498db' },
-  { id: 'C', name: 'C', color: '#2ecc71' },
-  { id: 'D', name: 'D', color: '#f1c40f' },
-  { id: 'E', name: 'E', color: '#9b59b6' },
-  { id: 'F', name: 'F', color: '#e67e22' },
-  { id: 'G', name: 'G', color: '#1abc9c' },
+  {
+    id: 'A',
+    code: 'A',
+    name: '적철독',
+    nameEn: 'Ferric',
+    color: '#8B1E1E',
+    colorSoft: '#F5E6E6',
+    ink: '#4A0F0F',
+    symbol: 'skull',
+  },
+  {
+    id: 'B',
+    code: 'B',
+    name: '청람독',
+    nameEn: 'Azure',
+    color: '#1B4F72',
+    colorSoft: '#E6F0F5',
+    ink: '#0D2A3D',
+    symbol: 'drop',
+  },
+  {
+    id: 'C',
+    code: 'C',
+    name: '녹청독',
+    nameEn: 'Viridian',
+    color: '#1E6B3A',
+    colorSoft: '#E6F5EC',
+    ink: '#0D3A1C',
+    symbol: 'leaf',
+  },
+  {
+    id: 'D',
+    code: 'D',
+    name: '호박독',
+    nameEn: 'Amber',
+    color: '#8B6914',
+    colorSoft: '#F7F1DE',
+    ink: '#4A3808',
+    symbol: 'bio',
+  },
+  {
+    id: 'E',
+    code: 'E',
+    name: '자정독',
+    nameEn: 'Violet',
+    color: '#5B2C6F',
+    colorSoft: '#F0E6F5',
+    ink: '#2E1538',
+    symbol: 'crystal',
+  },
+  {
+    id: 'F',
+    code: 'F',
+    name: '주황독',
+    nameEn: 'Rust',
+    color: '#A04000',
+    colorSoft: '#F8EBE0',
+    ink: '#5A2400',
+    symbol: 'flame',
+  },
+  {
+    id: 'G',
+    code: 'G',
+    name: '청록독',
+    nameEn: 'Teal',
+    color: '#0E6655',
+    colorSoft: '#E0F5F1',
+    ink: '#063D33',
+    symbol: 'molecule',
+  },
 ];
+
+function formulaById(id) {
+  return FORMULAS.find((f) => f.id === id) || null;
+}
+
+function cardLabel(type, formulaId, value) {
+  const f = formulaById(formulaId);
+  if (type === 'syringe') return '주사기';
+  if (!f) return '?';
+  if (type === 'x') return `${f.name} X`;
+  return `${f.name} ${value}`;
+}
 
 function shuffle(array) {
   const a = [...array];
@@ -23,7 +97,6 @@ function shuffle(array) {
   return a;
 }
 
-/** Number of syringe cards by player count (approx. rulebook scaling). */
 function syringeCount(playerCount) {
   if (playerCount <= 2) return 2;
   if (playerCount === 3) return 3;
@@ -32,29 +105,27 @@ function syringeCount(playerCount) {
   return 6;
 }
 
-/**
- * Build and deal for 2–6 players.
- * Returns { antidoteFormulaId, hands: { [playerId]: Card[] }, discardPile: [] }
- */
 function setupGame(playerIds) {
   const n = playerIds.length;
   if (n < 2 || n > 6) {
     throw new Error('플레이어는 2~6명이어야 합니다.');
   }
 
-  // X cards: one per formula
   const xCards = FORMULAS.map((f) => ({
     id: `X-${f.id}`,
     type: 'x',
     formulaId: f.id,
-    label: `${f.name}-X`,
+    value: null,
+    label: cardLabel('x', f.id),
+    name: f.name,
+    nameEn: f.nameEn,
+    symbol: f.symbol,
   }));
 
   const shuffledX = shuffle(xCards);
   const antidoteCard = shuffledX[0];
   const remainingX = shuffledX.slice(1);
 
-  // Number cards 1..playerCount for each formula (rule variants use 1–6; scale by seats)
   const maxNum = Math.min(6, Math.max(3, n));
   const numberCards = [];
   for (const f of FORMULAS) {
@@ -64,7 +135,10 @@ function setupGame(playerIds) {
         type: 'number',
         formulaId: f.id,
         value: v,
-        label: `${f.name}${v}`,
+        label: cardLabel('number', f.id, v),
+        name: f.name,
+        nameEn: f.nameEn,
+        symbol: f.symbol,
       });
     }
   }
@@ -75,16 +149,17 @@ function setupGame(playerIds) {
       id: `SYR-${i + 1}`,
       type: 'syringe',
       formulaId: null,
+      value: null,
       label: '주사기',
+      name: '주사기',
+      nameEn: 'Syringe',
+      symbol: 'syringe',
     });
   }
 
-  // Deal 2 cards each from remaining X + syringes (as in rulebook intro deal)
   const seed = shuffle([...remainingX, ...syringes]);
   const hands = {};
-  for (const pid of playerIds) {
-    hands[pid] = [];
-  }
+  for (const pid of playerIds) hands[pid] = [];
 
   let idx = 0;
   for (let round = 0; round < 2; round++) {
@@ -96,8 +171,6 @@ function setupGame(playerIds) {
     }
   }
   const leftoverSeed = seed.slice(idx);
-
-  // Rest of deck: leftover seed + all number cards, deal evenly then remainder to deck/discard empty
   const deck = shuffle([...leftoverSeed, ...numberCards]);
   idx = 0;
   while (idx < deck.length) {
@@ -118,6 +191,8 @@ function setupGame(playerIds) {
 
 module.exports = {
   FORMULAS,
+  formulaById,
+  cardLabel,
   shuffle,
   setupGame,
 };

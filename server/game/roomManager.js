@@ -28,7 +28,8 @@ function createEmptyRoom(code) {
     hostId: null,
     status: 'lobby',
     players: {},
-    order: [], // human player order (turn order)
+    spectators: {}, // late join — watch only until next round
+    order: [], // seated player turn order
     seatOrder: [], // includes silent for pass adjacency
     turnIndex: 0,
     antidoteFormulaId: null,
@@ -43,14 +44,14 @@ function createEmptyRoom(code) {
     expansionPlacebo: true,
     expansionRomance: true,
     idBadges: {},
-    romance: {}, // playerId -> romance card
+    romance: {},
     romanceDeck: [],
-    romanceDrawn: {}, // playerId -> true if already drew
+    romanceDrawn: {},
     othelloLovers: {},
     claudiusPicks: {},
     pendingPlaceboSwap: null,
     seriesTotals: {},
-    seriesRound: 0, // { playerId }
+    seriesRound: 0,
     createdAt: Date.now(),
     lastActiveAt: Date.now(),
   };
@@ -77,9 +78,14 @@ class RoomManager {
     if (!ref) return null;
     const room = this.rooms.get(ref.code);
     if (!room) return null;
-    const player = room.players[ref.playerId];
+    const player = room.players[ref.playerId] || room.spectators?.[ref.playerId];
     if (!player) return null;
-    return { room, player, playerId: ref.playerId };
+    return {
+      room,
+      player,
+      playerId: ref.playerId,
+      isSpectator: !!player.isSpectator || !!room.spectators?.[ref.playerId],
+    };
   }
 
   clearGrace(playerId) {
@@ -94,10 +100,12 @@ class RoomManager {
     this.clearGrace(playerId);
     const room = this.rooms.get(code);
     if (!room) return;
-    const ms = room.status === 'playing' ? GRACE_PLAYING_MS : GRACE_LOBBY_MS;
+    const isSpec = !!room.spectators?.[playerId];
+    const ms = isSpec ? 60_000 : room.status === 'playing' ? GRACE_PLAYING_MS : GRACE_LOBBY_MS;
     const timer = setTimeout(() => {
       this.graceTimers.delete(playerId);
-      this.removePlayer(playerId, code, 'timeout');
+      if (room.spectators?.[playerId]) this.removeSpectator(playerId, code);
+      else this.removePlayer(playerId, code, 'timeout');
     }, ms);
     this.graceTimers.set(playerId, timer);
   }
@@ -137,24 +145,48 @@ class RoomManager {
     const normalized = (code || '').toUpperCase().trim();
     const room = this.rooms.get(normalized);
     if (!room) return { error: '방을 찾을 수 없습니다.' };
-    if (room.status !== 'lobby') return { error: '이미 시작한 방입니다. 세션이 있으면 재접속하세요.' };
-    if (room.order.length >= 7) return { error: '방이 가득 찼습니다 (최대 7명).' };
 
     const playerId = makeId();
     const sessionToken = makeId();
-    room.players[playerId] = {
+    const name = sanitizeName(playerName);
+
+    // 대기실: 좌석 참가
+    if (room.status === 'lobby') {
+      if (room.order.length >= 7) return { error: '방이 가득 찼습니다 (최대 7명).' };
+      room.players[playerId] = {
+        id: playerId,
+        name,
+        socketId,
+        connected: true,
+        sessionToken,
+        isSpectator: false,
+      };
+      room.order.push(playerId);
+      this.bindSocket(socketId, normalized, playerId);
+      this.tokenIndex.set(sessionToken, { code: normalized, playerId });
+      this.pushLog(room, `${name}님이 입장했습니다.`);
+      this.touch(room);
+      return { room, playerId, sessionToken };
+    }
+
+    // 진행 중 / 종료 직후: 관전 (다음 판에 좌석 가능)
+    if (!room.spectators) room.spectators = {};
+    const specCount = Object.keys(room.spectators).length;
+    if (specCount >= 10) return { error: '관전 인원이 가득 찼습니다.' };
+
+    room.spectators[playerId] = {
       id: playerId,
-      name: sanitizeName(playerName),
+      name,
       socketId,
       connected: true,
       sessionToken,
+      isSpectator: true,
     };
-    room.order.push(playerId);
     this.bindSocket(socketId, normalized, playerId);
-    this.tokenIndex.set(sessionToken, { code: normalized, playerId });
-    this.pushLog(room, `${room.players[playerId].name}님이 입장했습니다.`);
+    this.tokenIndex.set(sessionToken, { code: normalized, playerId, spectator: true });
+    this.pushLog(room, `${name}님이 관전으로 들어왔습니다.`);
     this.touch(room);
-    return { room, playerId, sessionToken };
+    return { room, playerId, sessionToken, spectator: true };
   }
 
   reconnect(socketId, sessionToken) {
@@ -166,7 +198,7 @@ class RoomManager {
       this.tokenIndex.delete(sessionToken);
       return { error: '방이 더 이상 없습니다.' };
     }
-    const player = room.players[ref.playerId];
+    const player = room.players[ref.playerId] || room.spectators?.[ref.playerId];
     if (!player || player.sessionToken !== sessionToken) return { error: '세션이 유효하지 않습니다.' };
     if (player.socketId && player.socketId !== socketId) this.unbindSocket(player.socketId);
     player.socketId = socketId;
@@ -181,10 +213,17 @@ class RoomManager {
   handleDisconnect(socketId) {
     const ctx = this.getPlayerBySocket(socketId);
     if (!ctx) return null;
-    const { room, player, playerId } = ctx;
+    const { room, player, playerId, isSpectator } = ctx;
     player.connected = false;
     player.socketId = null;
     this.unbindSocket(socketId);
+    if (isSpectator) {
+      this.pushLog(room, `${player.name}님(관전) 연결 끊김.`);
+      // 관전은 짧게 유지 후 제거
+      this.scheduleGrace(playerId, room.code);
+      this.touch(room);
+      return { room, soft: true };
+    }
     if (room.pending?.type === 'trade' && (room.pending.fromId === playerId || room.pending.toId === playerId)) {
       room.pending = null;
       this.pushLog(room, `${player.name}님 연결 끊김으로 거래가 취소되었습니다.`);
@@ -198,12 +237,30 @@ class RoomManager {
   leaveExplicit(socketId) {
     const ctx = this.getPlayerBySocket(socketId);
     if (!ctx) return null;
+    if (ctx.isSpectator) {
+      return this.removeSpectator(ctx.playerId, ctx.room.code);
+    }
     return this.removePlayer(ctx.playerId, ctx.room.code, 'leave');
+  }
+
+  removeSpectator(playerId, code) {
+    const room = this.rooms.get(code);
+    if (!room?.spectators?.[playerId]) return null;
+    const sp = room.spectators[playerId];
+    if (sp.socketId) this.unbindSocket(sp.socketId);
+    if (sp.sessionToken) this.tokenIndex.delete(sp.sessionToken);
+    const name = sp.name;
+    delete room.spectators[playerId];
+    this.pushLog(room, `${name}님이 관전을 종료했습니다.`);
+    this.touch(room);
+    return { code, room };
   }
 
   removePlayer(playerId, code, reason) {
     const room = this.rooms.get(code);
-    if (!room || !room.players[playerId]) return null;
+    if (!room) return null;
+    if (room.spectators?.[playerId]) return this.removeSpectator(playerId, code);
+    if (!room.players[playerId]) return null;
     const player = room.players[playerId];
     const name = player.name;
     this.clearGrace(playerId);
@@ -959,6 +1016,15 @@ class RoomManager {
   viewForPlayer(room, playerId) {
     this.ensureActiveTurn(room);
     const formulas = room.formulas || FORMULAS.slice(0, 7);
+    const isSpectator = !!room.spectators?.[playerId];
+
+    // 임상 선택 중이면 카드 출처 플레이어 하이라이트용
+    let highlightPlayerId = null;
+    if (room.pending?.type === 'clinicalPick' && !isSpectator) {
+      highlightPlayerId =
+        room.pending.sources?.[playerId] ||
+        this.clinicalSourceId(room, playerId, room.pending.direction);
+    }
 
     const playersPublic = room.order.map((id) => ({
       id,
@@ -970,6 +1036,7 @@ class RoomManager {
       workstation: this.workstationView(room, id, playerId),
       isSilent: false,
       isBot: !!room.players[id]?.isBot,
+      isClinicalSource: highlightPlayerId === id,
     }));
 
     // 2인: 투명 플레이어 표시 (손 장수만, WS)
@@ -986,10 +1053,11 @@ class RoomManager {
       });
     }
 
-    const myHand = room.hands[playerId] ? [...room.hands[playerId]] : [];
+    const myHand =
+      isSpectator || !room.hands[playerId] ? [] : [...room.hands[playerId]];
 
     let pending = null;
-    if (room.pending) {
+    if (room.pending && !isSpectator) {
       const p = room.pending;
       if (p.type === 'massDiscard' || p.type === 'massPass') {
         pending = {
@@ -1026,18 +1094,46 @@ class RoomManager {
         };
       } else if (p.type === 'clinicalPick') {
         const opts = this.clinicalOptions(room, playerId, p.direction);
+        const srcId = p.sources?.[playerId] || this.clinicalSourceId(room, playerId, p.direction);
+        const srcName =
+          srcId === playerId
+            ? '나'
+            : room.players[srcId]?.name || (srcId === SILENT_ID ? '투명 플레이어' : '?');
+        const dirLabel =
+          p.direction === 'left' ? '왼쪽 방향' : p.direction === 'right' ? '오른쪽 방향' : '각자 본인';
         pending = {
           type: 'clinicalPick',
           direction: p.direction,
+          directionLabel: dirLabel,
+          sourcePlayerId: srcId,
+          sourceName: srcName,
+          pickFromLabel:
+            srcId === playerId
+              ? '내 앞에서 가져올 카드를 고르세요'
+              : `${srcName} 님의 내 앞에서 가져올 카드를 고르세요`,
           needSelect: (p.need || []).includes(playerId) && p.selections[playerId] == null,
           iHaveSelected: p.selections[playerId] != null,
-          options: (p.need || []).includes(playerId) ? opts.map((o) => ({
-            index: o.idx,
-            card: (o.faceUp || o.srcId === playerId) ? o.card : { id: 'h'+o.idx, type: 'hidden', label: '뒷면' },
-            srcId: o.srcId,
-          })) : [],
+          options: (p.need || []).includes(playerId)
+            ? opts.map((o) => ({
+                index: o.idx,
+                card:
+                  o.faceUp || o.srcId === playerId
+                    ? o.card
+                    : { id: 'h' + o.idx, type: 'hidden', label: '뒷면' },
+                srcId: o.srcId,
+                sourceName:
+                  o.srcId === playerId
+                    ? '나'
+                    : room.players[o.srcId]?.name ||
+                      (o.srcId === SILENT_ID ? '투명 플레이어' : '?'),
+              }))
+            : [],
           waitingNames: (p.need || [])
-            .filter((id) => (room.players[id]?.connected || room.players[id]?.isBot) && p.selections[id] == null)
+            .filter(
+              (id) =>
+                (room.players[id]?.connected || room.players[id]?.isBot) &&
+                p.selections[id] == null
+            )
             .map((id) => room.players[id]?.name),
         };
       } else if (p.type === 'claudiusPick') {
@@ -1050,13 +1146,23 @@ class RoomManager {
 
     const playingLike = room.status === 'playing' || room.status === 'ending_claudius';
 
+    const spectatorsPublic = Object.values(room.spectators || {}).map((s) => ({
+      id: s.id,
+      name: s.name,
+      connected: !!s.connected,
+      isSpectator: true,
+    }));
+
     const base = {
       code: room.code,
       status: room.status,
       hostId: room.hostId,
       players: playersPublic,
+      spectators: spectatorsPublic,
+      isSpectator,
       turnPlayerId: room.status === 'playing' ? this.currentPlayerId(room) : null,
       isMyTurn:
+        !isSpectator &&
         room.status === 'playing' &&
         !room.pending &&
         !room.pendingPlaceboSwap &&
@@ -1071,20 +1177,28 @@ class RoomManager {
       silentMode: !!room.config?.silentMode,
       expansionPlacebo: !!room.expansionPlacebo,
       expansionRomance: !!room.expansionRomance,
-      myBadge: room.idBadges?.[playerId] || null,
-      myRomance: room.romance?.[playerId] || null,
+      myBadge: isSpectator ? null : room.idBadges?.[playerId] || null,
+      myRomance: isSpectator ? null : room.romance?.[playerId] || null,
       canDrawRomance:
+        !isSpectator &&
         !!room.config?.romance &&
         !room.romanceDrawn?.[playerId] &&
         !room.romance?.[playerId],
       romanceDeckCount: (room.romanceDeck || []).length,
       pendingPlaceboSwap:
-        room.pendingPlaceboSwap?.playerId === playerId ? { active: true } : null,
-      othelloLoverId: room.othelloLovers?.[playerId] || null,
+        !isSpectator && room.pendingPlaceboSwap?.playerId === playerId
+          ? { active: true }
+          : null,
+      othelloLoverId: isSpectator ? null : room.othelloLovers?.[playerId] || null,
       seriesRound: room.seriesRound || 0,
       seriesTotals: room.seriesTotals || {},
-      mySeriesTotal: (room.seriesTotals || {})[playerId] || 0,
-      statusLine: this.buildStatusLine(room, playerId),
+      mySeriesTotal: isSpectator ? 0 : (room.seriesTotals || {})[playerId] || 0,
+      statusLine: isSpectator
+        ? room.status === 'ended'
+          ? '관전 중 — 호스트가 「한 판 더」를 누르면 다음 판 좌석에 앉을 수 있습니다.'
+          : '관전 중 — 테이블은 볼 수 있고, 손패·행동은 없습니다.'
+        : this.buildStatusLine(room, playerId),
+      clinicalHighlightId: highlightPlayerId,
     };
 
     if (room.status === 'ended') {
@@ -1125,16 +1239,23 @@ class RoomManager {
     if (p.type === 'massDiscard') return '전원 버리기 — 손에서 카드 1장을 고르세요.';
     if (p.type === 'massPass') return '전원 돌리기 — 넘길 카드 1장을 고르세요.';
     if (p.type === 'trade') {
-      if (p.toId === playerId) return '1:1 제안 도착 — 수락/거절하세요.';
-      if (p.fromId === playerId) return '1:1 응답 대기 중…';
-      return '다른 플레이어가 1:1 거래 중…';
+      if (p.toId === playerId) return '한 명과 바꾸기 제안 도착 — 수락/거절하세요.';
+      if (p.fromId === playerId) return '맞교환 응답 대기 중…';
+      return '다른 플레이어가 맞교환 중…';
     }
     if (p.type === 'clinicalDirection') {
-      if (p.playerId === playerId) return '임상 실험 — 방향을 고르세요.';
+      if (p.playerId === playerId) return '임상 실험 — 어느 방향의 내 앞에서 가져올지 고르세요.';
       return '임상 실험 방향 결정 중…';
     }
     if (p.type === 'clinicalPick') {
-      if ((p.need || []).includes(playerId) && p.selections[playerId] == null) return '임상 실험 — 가져올 카드를 고르세요.';
+      if ((p.need || []).includes(playerId) && p.selections[playerId] == null) {
+        const src = p.sources?.[playerId];
+        const nm =
+          src === playerId
+            ? '내 앞'
+            : (room.players[src]?.name || '?') + ' 님의 내 앞';
+        return `임상 실험 — ${nm}에서 가져올 카드를 고르세요.`;
+      }
       return '임상 실험 — 다른 사람 선택 대기…';
     }
     if (p.type === 'claudiusPick') return '속임수 왕 선택 중…';
@@ -1168,8 +1289,34 @@ class RoomManager {
     const ctx = this.getPlayerBySocket(socketId);
     if (!ctx) return { error: '방 없음' };
     const { room, playerId } = ctx;
+    if (ctx.isSpectator) return { error: '관전자는 시작할 수 없습니다.' };
     if (room.hostId !== playerId) return { error: '호스트만 가능' };
     if (room.status !== 'ended') return { error: '종료된 판에서만 가능' };
+
+    // 관전자를 빈 좌석으로 승격 (최대 7)
+    if (room.spectators) {
+      for (const sid of Object.keys(room.spectators)) {
+        if (room.order.length >= 7) break;
+        const sp = room.spectators[sid];
+        if (!sp?.connected) continue;
+        room.players[sid] = {
+          id: sid,
+          name: sp.name,
+          socketId: sp.socketId,
+          connected: true,
+          sessionToken: sp.sessionToken,
+          isSpectator: false,
+          isBot: false,
+        };
+        room.order.push(sid);
+        if (sp.sessionToken) {
+          this.tokenIndex.set(sp.sessionToken, { code: room.code, playerId: sid });
+        }
+        delete room.spectators[sid];
+        this.pushLog(room, `${sp.name}님이 다음 판 좌석에 앉았습니다.`);
+      }
+    }
+
     const hasBot = room.order.some((id) => room.players[id]?.isBot);
     const setup = setupGame(room.order.slice(), {
       placebo: room.expansionPlacebo,

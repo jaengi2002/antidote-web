@@ -814,26 +814,44 @@ export default function App() {
 
       {pending?.type === 'clinicalPick' && pending.needSelect && (
         <div className="modal-backdrop">
-          <div className="modal">
-            <h2>임상 실험 — 가져올 카드</h2>
-            <p>
-              지정된 방향의 내 앞에서 카드 1장을 고르세요. (임상 실험 카드는 제외)
+          <div className="modal clinical-pick-modal">
+            <h2>임상 실험 — 카드 가져오기</h2>
+            <p className="clinical-pick-from">
+              {pending.pickFromLabel ||
+                `${pending.sourceName || '?'} 님의 내 앞에서 고르세요`}
+            </p>
+            <p className="clinical-pick-meta">
+              방향: <strong>{pending.directionLabel || pending.direction}</strong>
+              {' · '}
+              출처:{' '}
+              <strong className="clinical-source-name">
+                {pending.sourceName === '나'
+                  ? '내 앞'
+                  : `${pending.sourceName} 님의 내 앞`}
+              </strong>
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
+              임상 실험 카드는 고를 수 없습니다. 뒷면은 X 또는 속임수 약일 수 있습니다.
             </p>
             <div className="hand-fan">
               {(pending.options || []).map((o) => (
-                <GameCard
-                  key={o.index}
-                  card={o.card}
-                  formulas={formulas}
-                  size="md"
-                  onClick={() =>
-                    getSocket().emit(
-                      'clinicalPickCard',
-                      { workstationIndex: o.index },
-                      (res) => applyAck(res)
-                    )
-                  }
-                />
+                <div key={o.index} className="clinical-option">
+                  <span className="clinical-option__owner">
+                    {o.sourceName === '나' ? '내 앞' : `${o.sourceName}`}
+                  </span>
+                  <GameCard
+                    card={o.card}
+                    formulas={formulas}
+                    size="md"
+                    onClick={() =>
+                      getSocket().emit(
+                        'clinicalPickCard',
+                        { workstationIndex: o.index },
+                        (res) => applyAck(res)
+                      )
+                    }
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -938,7 +956,7 @@ export default function App() {
           {state.players.map((p) => (
             <div
               key={p.id}
-              className={`opponent ${p.id === state.turnPlayerId ? 'is-turn' : ''} ${!p.connected ? 'is-offline' : ''} ${p.isMe ? 'opponent--me' : ''}`}
+              className={`opponent ${p.id === state.turnPlayerId ? 'is-turn' : ''} ${!p.connected ? 'is-offline' : ''} ${p.isMe ? 'opponent--me' : ''} ${p.isClinicalSource ? 'is-clinical-source' : ''}`}
               style={{ minWidth: 100, maxWidth: 160 }}
             >
               <div className="opponent__name">
@@ -1001,7 +1019,23 @@ export default function App() {
         </div>
       </div>
 
+      {state.isSpectator && (
+        <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
+          관전 모드입니다. 테이블·로그는 볼 수 있고, 손패와 행동은 없습니다.
+          {state.status === 'ended'
+            ? ' 호스트가 「한 판 더」를 누르면 다음 판 좌석에 앉을 수 있습니다.'
+            : ''}
+          {(state.spectators || []).length > 0 && (
+            <span>
+              {' '}
+              관전 {(state.spectators || []).map((s) => s.name).join(', ')}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Hand */}
+      {!state.isSpectator && (
       <div className="hand-dock">
         <div className="hand-dock__panel">
           <div className="hand-dock__head">
@@ -1063,8 +1097,10 @@ export default function App() {
         </div>
       </div>
 
+      )}
+
       {/* Actions — only on your turn, no pending */}
-      {state.isMyTurn && !pending && (
+      {state.isMyTurn && !pending && !state.isSpectator && (
         <div className="console">
           <div className="console__panel">
             <div className="console__tabs">

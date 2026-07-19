@@ -1381,6 +1381,58 @@ button.fchip:not(:disabled) {
   padding: 6px;
 }
 
+/* Clinical trial: whose front area you're taking from */
+.opponent.is-clinical-source {
+  outline: 3px solid #f0c040;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 0 0 4px rgba(240, 192, 64, 0.25);
+  background: rgba(240, 192, 64, 0.08);
+}
+
+.opponent.is-clinical-source .opponent__name {
+  color: #ffe9a0;
+  font-weight: 700;
+}
+
+.opponent.is-clinical-source .opponent__name::after {
+  content: ' ← 여기서 가져옴';
+  display: block;
+  font-size: 0.7rem;
+  color: #f0c040;
+  font-weight: 600;
+}
+
+.clinical-pick-modal .clinical-pick-from {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--wood);
+  margin: 0.35rem 0;
+}
+
+.clinical-pick-meta {
+  font-size: 0.9rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.clinical-source-name {
+  color: #8a5a00;
+}
+
+.clinical-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.clinical-option__owner {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+}
+
 /* Sticky status during multiplayer */
 .status-banner {
   position: sticky;

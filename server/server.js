@@ -52,6 +52,13 @@ function emitViews(room) {
     const view = rooms.viewForPlayer(room, playerId);
     if (view) io.to(p.socketId).emit('gameState', view);
   }
+  // spectators
+  for (const sid of Object.keys(room.spectators || {})) {
+    const s = room.spectators[sid];
+    if (!s?.socketId || !s.connected) continue;
+    const view = rooms.viewForPlayer(room, sid);
+    if (view) io.to(s.socketId).emit('gameState', view);
+  }
 }
 
 function replySession(socket, result, cb) {

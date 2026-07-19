@@ -25,11 +25,11 @@ export function RulesPanel({ compact = false }) {
           </span>
         </li>
         <li>
-          <strong>2. 패스</strong>
+          <strong>2. 전원 돌리기</strong>
           <span>전원이 손의 카드 1장을 왼쪽 또는 오른쪽으로 동시에 돌립니다.</span>
         </li>
         <li>
-          <strong>3. 1:1</strong>
+          <strong>3. 한 명과 바꾸기</strong>
           <span>한 사람과 손패 카드 1장씩 맞바꿉니다. 안 되면 다른 행동을 고릅니다.</span>
         </li>
         <li>

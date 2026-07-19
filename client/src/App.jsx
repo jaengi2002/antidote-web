@@ -1,7 +1,8 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { CardBack, FormulaChip, GameCard } from './components/GameCard';
 import { RulesPanel } from './components/RulesPanel';
+import { sfx } from './sounds';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
@@ -57,7 +58,13 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [name, setName] = useState(() => localStorage.getItem('antidote_name') || '');
-  const [joinCode, setJoinCode] = useState('');
+  const [joinCode, setJoinCode] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('room')?.toUpperCase() || '';
+    } catch {
+      return '';
+    }
+  });
   const [state, setState] = useState(null);
   const [session, setSession] = useState(() => loadSession());
   const [error, setError] = useState('');
@@ -70,6 +77,7 @@ export default function App() {
   const [wsPick, setWsPick] = useState(null);
   const [tradeResponseCard, setTradeResponseCard] = useState(null);
   const [showRules, setShowRules] = useState(false);
+  const prevStatusRef = useRef(null);
 
   const formulas = state?.formulas?.length ? state.formulas : SAMPLE_FORMULAS;
 
@@ -136,10 +144,19 @@ export default function App() {
     };
     const onDisconnect = () => {
       setConnected(false);
-      setInfo('연결 끊김 — 재연결 시도 중…');
+      setInfo('연결이 끊겼습니다. 자동 재연결 중… 같은 브라우저면 세션으로 다시 붙습니다.');
     };
     const onState = (view) => {
-      setState(view);
+      setState((prev) => {
+        // sounds
+        if (prev?.status === 'playing' && view?.status === 'ended') sfx.end();
+        else if (view?.pending?.type === 'massDiscard' && prev?.pending?.type !== 'massDiscard')
+          sfx.discard();
+        else if (view?.pending?.type === 'massPass' && prev?.pending?.type !== 'massPass')
+          sfx.receive();
+        else if (view?.isMyTurn && !prev?.isMyTurn) sfx.click();
+        return view;
+      });
       setError('');
     };
     s.on('connect', onConnect);
@@ -169,15 +186,32 @@ export default function App() {
 
   const createRoom = () => {
     if (!name.trim()) return setError('닉네임을 입력하세요.');
-    getSocket().emit('createRoom', { name: name.trim() }, (res) => applyAck(res));
+    getSocket().emit('createRoom', { name: name.trim() }, (res) => {
+      if (applyAck(res) && res.roomCode) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('room', res.roomCode);
+        window.history.replaceState({}, '', url.toString());
+      }
+    });
   };
 
   const joinRoom = () => {
     if (!name.trim()) return setError('닉네임을 입력하세요.');
     if (!joinCode.trim()) return setError('방 코드를 입력하세요.');
-    getSocket().emit('joinRoom', { code: joinCode.trim(), name: name.trim() }, (res) =>
-      applyAck(res)
-    );
+    getSocket().emit('joinRoom', { code: joinCode.trim(), name: name.trim() }, (res) => {
+      if (applyAck(res) && res.roomCode) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('room', res.roomCode);
+        window.history.replaceState({}, '', url.toString());
+      }
+    });
+  };
+
+  const copyInvite = (code) => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
+    navigator.clipboard?.writeText(url);
+    setInfo('초대 링크를 복사했습니다. 친구에게 보내세요.');
+    setTimeout(() => setInfo(''), 2000);
   };
 
   const leaveRoom = () => {
@@ -360,13 +394,17 @@ export default function App() {
             <div className="table-topbar__meta">
               <span className="room-code">{state.code}</span>
               <button type="button" className="btn btn--ghost" onClick={() => copyCode(state.code)}>
-                복사
+                코드
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={() => copyInvite(state.code)}>
+                초대 링크
               </button>
               <button type="button" className="btn btn--ghost" onClick={leaveRoom}>
                 나가기
               </button>
             </div>
           </div>
+          {info && <p className="msg-info" style={{ marginBottom: 8 }}>{info}</p>}
           <div className="landing-grid">
             <div className="panel panel--dark">
               <h2>좌석 ({state.players.length}/7)</h2>
@@ -381,6 +419,7 @@ export default function App() {
                       </strong>
                       <span>
                         {p.isHost ? '호스트 · ' : ''}
+                        {p.isBot ? '봇 · ' : ''}
                         {p.connected ? '접속' : '오프라인'}
                       </span>
                     </div>
@@ -389,8 +428,17 @@ export default function App() {
               </div>
               {iAmHost && (
                 <div style={{ marginBottom: 12 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ width: '100%', marginBottom: 10 }}
+                    onClick={() => getSocket().emit('addBot', (res) => applyAck(res))}
+                    disabled={state.players.length >= 7}
+                  >
+                    봇 추가 (혼자 연습)
+                  </button>
                   <p style={{ fontSize: 13, opacity: 0.8, margin: '0 0 8px' }}>
-                    확장 (2인이면 시작 시 자동 OFF)
+                    확장 (순수 2인이면 시작 시 자동 OFF · 봇 있으면 유지)
                   </p>
                   <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, textTransform: 'none', letterSpacing: 0, fontSize: 14 }}>
                     <input
@@ -536,9 +584,36 @@ export default function App() {
                 ))}
               </ul>
             )}
-            <button type="button" className="btn btn--primary" onClick={leaveRoom}>
-              로비로
-            </button>
+            {state.seriesRound > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <h3 style={{ fontFamily: 'var(--font-display)', margin: '0 0 6px' }}>
+                  시리즈 누적 ({state.seriesRound}판)
+                </h3>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                  {state.players.map((p) => (
+                    <li key={p.id}>
+                      {p.name}: {(state.seriesTotals || {})[p.id] ?? 0}점
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="btn-row">
+              {(state.hostId === state.me ||
+                !!(state.players || []).find((p) => p.isMe && p.isHost)) && (
+                <button
+                  type="button"
+                  className="btn btn--gold"
+                  style={{ flex: 1 }}
+                  onClick={() => getSocket().emit('nextRound', (res) => applyAck(res))}
+                >
+                  한 판 더 (시리즈)
+                </button>
+              )}
+              <button type="button" className="btn btn--primary" style={{ flex: 1 }} onClick={leaveRoom}>
+                로비로
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -549,32 +624,28 @@ export default function App() {
   // ═══════════ PLAYING ═══════════
   const turnName = state.players.find((p) => p.id === state.turnPlayerId)?.name || '?';
   const pending = state.pending;
+  const statusLine = state.statusLine || '';
 
   return (
     <div className="app app--table">
       <header className="table-topbar">
         <div>
-          <h1>해독제 · 본작 규칙</h1>
+          <h1>해독제</h1>
           {state.config && (
             <span style={{ fontSize: 12, opacity: 0.65, marginLeft: 8 }}>
-              포뮬러 {state.config.formulas} · 숫자 1–{state.config.maxNumber} · 주사{' '}
-              {state.config.syringes}
+              약 {state.config.formulas}종 · 1–{state.config.maxNumber}
+              {state.seriesRound ? ` · 시리즈 ${state.seriesRound}판+` : ''}
               {state.silentMode ? ' · 투명P' : ''}
             </span>
           )}
         </div>
         <div className="table-topbar__meta">
           <span className="room-code">{state.code}</span>
+          <button type="button" className="btn btn--ghost" onClick={() => copyInvite(state.code)}>
+            초대
+          </button>
           <div className={`turn-badge ${state.isMyTurn ? 'is-mine' : ''}`}>
-            {pending
-              ? pending.type === 'massDiscard'
-                ? '전원 버리기 중'
-                : pending.type === 'massPass'
-                  ? '전원 패스 중'
-                  : '거래 중'
-              : state.isMyTurn
-                ? '당신 차례'
-                : `${turnName} 차례`}
+            {state.isMyTurn ? '당신 차례' : `${turnName} 차례`}
           </div>
           <button type="button" className="btn btn--ghost" onClick={() => setShowRules(true)}>
             규칙
@@ -585,7 +656,17 @@ export default function App() {
         </div>
       </header>
 
-      {!connected && <div className="banner banner--warn">오프라인 — 재연결 중…</div>}
+      {statusLine && (
+        <div className="status-banner" role="status">
+          {statusLine}
+        </div>
+      )}
+
+      {!connected && (
+        <div className="banner banner--warn">
+          오프라인 — 재연결 중… 같은 브라우저면 세션으로 자리 복구됩니다.
+        </div>
+      )}
       {error && (
         <div className="banner banner--error" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
           {error}
@@ -728,6 +809,40 @@ export default function App() {
       {pending?.type === 'clinicalDirection' && !pending.amChooser && (
         <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
           {pending.name} 님이 임상 실험 방향을 고르는 중…
+        </div>
+      )}
+
+      {pending?.type === 'clinicalPick' && pending.needSelect && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>임상 실험 — 가져올 카드</h2>
+            <p>
+              지정된 방향의 내 앞에서 카드 1장을 고르세요. (임상 실험 카드는 제외)
+            </p>
+            <div className="hand-fan">
+              {(pending.options || []).map((o) => (
+                <GameCard
+                  key={o.index}
+                  card={o.card}
+                  formulas={formulas}
+                  size="md"
+                  onClick={() =>
+                    getSocket().emit(
+                      'clinicalPickCard',
+                      { workstationIndex: o.index },
+                      (res) => applyAck(res)
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pending?.type === 'clinicalPick' && !pending.needSelect && (
+        <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
+          임상 선택 대기: {(pending.waitingNames || []).join(', ') || '…'}
         </div>
       )}
 
@@ -955,8 +1070,8 @@ export default function App() {
             <div className="console__tabs">
               {[
                 ['discard', '1. 버리기'],
-                ['pass', '2. 패스'],
-                ['trade', '3. 1:1'],
+                ['pass', '2. 전원 돌리기'],
+                ['trade', '3. 한 명과 바꾸기'],
                 ['syringe', '4. 주사'],
                 ...(state.canDrawRomance ? [['romance', '5. 비밀 목표']] : []),
               ].map(([id, label]) => (
@@ -986,14 +1101,15 @@ export default function App() {
             {action === 'pass' && (
               <>
                 <p className="console__help">
-                  전원이 손의 카드 1장을 옆 사람에게 패스합니다. 건넨 뒤에 받은 카드를 봅니다.
+                  <strong>모두</strong> 손의 카드 1장을 옆 사람에게 돌립니다. 건넨 뒤에야 받은
+                  카드를 봅니다.
                 </p>
                 <div className="btn-row">
                   <button type="button" className="btn btn--primary" style={{ flex: 1 }} onClick={() => beginPass('left')}>
-                    왼쪽(이전 순서)으로
+                    왼쪽으로 돌리기
                   </button>
                   <button type="button" className="btn btn--primary" style={{ flex: 1 }} onClick={() => beginPass('right')}>
-                    오른쪽(다음 순서)으로
+                    오른쪽으로 돌리기
                   </button>
                 </div>
               </>
@@ -1002,8 +1118,8 @@ export default function App() {
             {action === 'trade' && (
               <>
                 <p className="console__help">
-                  한 명과 손패 1:1. 거절되면 <strong>턴을 유지</strong>하고 다른 행동을 고를 수
-                  있습니다.
+                  한 사람과 손패 1장씩 맞바꿉니다. 거절되면 <strong>턴을 유지</strong>하고 다른
+                  행동을 고를 수 있습니다.
                 </p>
                 <label>
                   상대 (투명 플레이어와는 거래 불가)

@@ -31,7 +31,7 @@ function createEmptyRoom(code) {
     order: [], // human player order (turn order)
     seatOrder: [], // includes silent for pass adjacency
     turnIndex: 0,
-    antidoteFormulaid: null,
+    antidoteFormulaId: null,
     hands: {},
     workstations: {},
     pending: null,
@@ -48,7 +48,9 @@ function createEmptyRoom(code) {
     romanceDrawn: {}, // playerId -> true if already drew
     othelloLovers: {},
     claudiusPicks: {},
-    pendingPlaceboSwap: null, // { playerId }
+    pendingPlaceboSwap: null,
+    seriesTotals: {},
+    seriesRound: 0, // { playerId }
     createdAt: Date.now(),
     lastActiveAt: Date.now(),
   };
@@ -277,9 +279,11 @@ class RoomManager {
       return { error: '접속 중인 플레이어가 2명 이상이어야 합니다.' };
     }
 
+    const hasBot = room.order.some((id) => room.players[id]?.isBot);
     const setup = setupGame(room.order, {
       placebo: room.expansionPlacebo,
       romance: room.expansionRomance,
+      disableSilent: hasBot,
     });
     room.antidoteFormulaId = setup.antidoteFormulaId;
     room.hands = setup.hands;
@@ -482,7 +486,7 @@ class RoomManager {
       };
       this.pushLog(
         room,
-        `${room.players[who]?.name}님: 임상 실험! 방향 선택 (left / right / self WS)`
+        `${room.players[who]?.name}님: 임상 실험! 방향을 고르세요`
       );
       this.touch(room);
       return;
@@ -492,7 +496,24 @@ class RoomManager {
     this.advanceTurn(room);
   }
 
-  /** 임상 실험 방향: left | right | self */
+  clinicalSourceId(room, pid, direction) {
+    const order = room.order;
+    const n = order.length;
+    const i = order.indexOf(pid);
+    if (direction === 'left') return order[(i - 1 + n) % n];
+    if (direction === 'right') return order[(i + 1) % n];
+    return pid;
+  }
+
+  clinicalOptions(room, pid, direction) {
+    const srcId = this.clinicalSourceId(room, pid, direction);
+    const ws = room.workstations[srcId] || [];
+    return ws
+      .map((s, idx) => ({ idx, card: s.card, faceUp: s.faceUp, srcId }))
+      .filter((o) => o.card.type !== 'clinical');
+  }
+
+  /** 임상 실험 방향 후 각자 카드 선택 */
   clinicalChooseDirection(socketId, direction) {
     const ctx = this.getPlayerBySocket(socketId);
     if (!ctx || ctx.room.status !== 'playing') return { error: '게임 중이 아닙니다.' };
@@ -502,46 +523,94 @@ class RoomManager {
     if (p.playerId !== playerId) return { error: '임상 실험 선언자만 방향을 정합니다.' };
     if (!['left', 'right', 'self'].includes(direction)) return { error: 'left | right | self' };
 
-    const order = room.order;
-    const n = order.length;
-    for (const pid of order) {
-      let srcId = pid;
-      if (direction === 'left') {
-        const i = order.indexOf(pid);
-        srcId = order[(i - 1 + n) % n];
-      } else if (direction === 'right') {
-        const i = order.indexOf(pid);
-        srcId = order[(i + 1) % n];
-      }
-      const ws = room.workstations[srcId] || [];
-      // 임상 실험 카드 제외하고 선택 가능
-      const opts = ws
-        .map((s, idx) => ({ s, idx }))
-        .filter(({ s }) => s.card.type !== 'clinical');
-      if (!opts.length) continue;
-      const pick = opts[Math.floor(Math.random() * opts.length)];
-      const [taken] = ws.splice(pick.idx, 1);
-      if (!room.hands[pid]) room.hands[pid] = [];
-      room.hands[pid].push(taken.card);
-      // 속임수 약 훔침 처리
-      if (taken.card.type === 'placebo') {
-        this.triggerPlaceboReveal(room, srcId, pid);
+    const need = [];
+    const sources = {};
+    for (const pid of room.order) {
+      const opts = this.clinicalOptions(room, pid, direction);
+      if (opts.length) {
+        need.push(pid);
+        sources[pid] = this.clinicalSourceId(room, pid, direction);
       }
     }
+    if (!need.length) {
+      this.pushLog(room, '임상 실험: 가져올 카드가 없어 넘어갑니다.');
+      room.pending = null;
+      this.advanceTurn(room);
+      return { room };
+    }
+    room.pending = {
+      type: 'clinicalPick',
+      direction,
+      need: need.slice(),
+      sources,
+      selections: {},
+    };
     this.pushLog(
       room,
-      `임상 실험 해소 (${direction === 'left' ? '왼쪽' : direction === 'right' ? '오른쪽' : '본인'} WS).`
+      '임상 실험: ' +
+        (direction === 'left' ? '왼쪽' : direction === 'right' ? '오른쪽' : '본인') +
+        ' 내 앞에서 각자 카드를 고르세요.'
     );
-    room.pending = null;
-    this.advanceTurn(room);
+    this.touch(room);
     return { room };
   }
 
+  clinicalPickCard(socketId, workstationIndex) {
+    const ctx = this.getPlayerBySocket(socketId);
+    if (!ctx || ctx.room.status !== 'playing') return { error: '게임 중이 아닙니다.' };
+    const { room, playerId } = ctx;
+    const p = room.pending;
+    if (!p || p.type !== 'clinicalPick') return { error: '임상 선택 단계가 아닙니다.' };
+    if (!p.need.includes(playerId)) return { error: '선택할 카드가 없습니다.' };
+    if (p.selections[playerId] != null) return { error: '이미 선택했습니다.' };
+    const opts = this.clinicalOptions(room, playerId, p.direction);
+    if (!opts.some((o) => o.idx === workstationIndex)) return { error: '그 카드는 고를 수 없습니다.' };
+    p.selections[playerId] = workstationIndex;
+    this.touch(room);
+    this.tryResolveClinicalPick(room);
+    return { room };
+  }
+
+  tryResolveClinicalPick(room) {
+    const p = room.pending;
+    if (!p || p.type !== 'clinicalPick') return;
+    const needReady = p.need.filter((id) => room.players[id]?.connected || room.players[id]?.isBot);
+    if (!needReady.every((id) => p.selections[id] != null)) return;
+    for (const id of p.need) {
+      if (p.selections[id] == null) {
+        const opts = this.clinicalOptions(room, id, p.direction);
+        if (opts.length) p.selections[id] = opts[0].idx;
+      }
+    }
+    const moves = Object.keys(p.selections).map((pid) => ({
+      pid,
+      srcId: p.sources[pid],
+      wi: p.selections[pid],
+    }));
+    moves.sort((a, b) => {
+      if (a.srcId !== b.srcId) return String(a.srcId).localeCompare(String(b.srcId));
+      return b.wi - a.wi;
+    });
+    for (const m of moves) {
+      const ws = room.workstations[m.srcId] || [];
+      if (m.wi < 0 || m.wi >= ws.length) continue;
+      if (ws[m.wi].card.type === 'clinical') continue;
+      const [taken] = ws.splice(m.wi, 1);
+      if (!room.hands[m.pid]) room.hands[m.pid] = [];
+      room.hands[m.pid].push(taken.card);
+      if (taken.card.type === 'placebo' && this.isHuman(m.srcId)) {
+        this.triggerPlaceboReveal(room, m.srcId, m.pid);
+      }
+    }
+    this.pushLog(room, '임상 실험 완료.');
+    room.pending = null;
+    this.advanceTurn(room);
+  }
+
   triggerPlaceboReveal(room, ownerId, stealerId) {
-    // 주인에게 알림 + 손/WS 스왑 기회
     this.pushLog(
       room,
-      `${room.players[ownerId]?.name}님의 속임수 약가 훔쳐졌습니다! (즉시 손↔내 앞 교환 가능)`
+      `${room.players[ownerId]?.name || '?'}님의 속임수 약이 훔쳐졌습니다! (손↔내 앞 교환 가능)`
     );
     room.pendingPlaceboSwap = { playerId: ownerId, stealerId };
   }
@@ -845,6 +914,16 @@ class RoomManager {
     for (const n of room.scoreNotes) this.pushLog(room, n);
     const winNames = result.winners.map((id) => room.players[id]?.name).filter(Boolean);
     this.pushLog(room, winNames.length ? `생존: ${winNames.join(', ')}` : '생존자 없음');
+    if (!room.seriesTotals) room.seriesTotals = {};
+    room.seriesRound = (room.seriesRound || 0) + 1;
+    for (const pid of room.order) {
+      const sc = room.scores[pid]?.score || 0;
+      room.seriesTotals[pid] = (room.seriesTotals[pid] || 0) + sc;
+    }
+    this.pushLog(
+      room,
+      `시리즈 ${room.seriesRound}판 끝. 누적 점수 유지 — 호스트가 「한 판 더」로 이어갈 수 있습니다.`
+    );
     this.touch(room);
   }
 
@@ -890,6 +969,7 @@ class RoomManager {
       isMe: id === playerId,
       workstation: this.workstationView(room, id, playerId),
       isSilent: false,
+      isBot: !!room.players[id]?.isBot,
     }));
 
     // 2인: 투명 플레이어 표시 (손 장수만, WS)
@@ -915,7 +995,7 @@ class RoomManager {
         pending = {
           type: p.type,
           direction: p.direction || null,
-          initiatorid: p.initiatorId,
+          initiatorId: p.initiatorId,
           initiatorName: room.players[p.initiatorId]?.name,
           needSelect: (p.need || []).includes(playerId) && !p.selections[playerId],
           iHaveSelected: !!p.selections[playerId],
@@ -943,6 +1023,22 @@ class RoomManager {
           playerId: p.playerId,
           amChooser: p.playerId === playerId,
           name: room.players[p.playerId]?.name,
+        };
+      } else if (p.type === 'clinicalPick') {
+        const opts = this.clinicalOptions(room, playerId, p.direction);
+        pending = {
+          type: 'clinicalPick',
+          direction: p.direction,
+          needSelect: (p.need || []).includes(playerId) && p.selections[playerId] == null,
+          iHaveSelected: p.selections[playerId] != null,
+          options: (p.need || []).includes(playerId) ? opts.map((o) => ({
+            index: o.idx,
+            card: (o.faceUp || o.srcId === playerId) ? o.card : { id: 'h'+o.idx, type: 'hidden', label: '뒷면' },
+            srcId: o.srcId,
+          })) : [],
+          waitingNames: (p.need || [])
+            .filter((id) => (room.players[id]?.connected || room.players[id]?.isBot) && p.selections[id] == null)
+            .map((id) => room.players[id]?.name),
         };
       } else if (p.type === 'claudiusPick') {
         pending = {
@@ -985,6 +1081,10 @@ class RoomManager {
       pendingPlaceboSwap:
         room.pendingPlaceboSwap?.playerId === playerId ? { active: true } : null,
       othelloLoverId: room.othelloLovers?.[playerId] || null,
+      seriesRound: room.seriesRound || 0,
+      seriesTotals: room.seriesTotals || {},
+      mySeriesTotal: (room.seriesTotals || {})[playerId] || 0,
+      statusLine: this.buildStatusLine(room, playerId),
     };
 
     if (room.status === 'ended') {
@@ -1008,6 +1108,216 @@ class RoomManager {
     }
 
     return base;
+  }
+
+
+  buildStatusLine(room, playerId) {
+    if (room.status === 'lobby') return '대기실 — 인원이 모이면 호스트가 시작합니다.';
+    if (room.status === 'ended') return '한 판 종료. 시리즈 점수 확인 후 「한 판 더」 가능.';
+    if (room.status === 'ending_claudius') return '속임수 왕: 내 앞에서 마실 카드를 고르는 중…';
+    if (room.pendingPlaceboSwap?.playerId === playerId) return '속임수 약 발동 — 손과 내 앞을 교환할 수 있습니다.';
+    const p = room.pending;
+    if (!p) {
+      const turn = this.currentPlayerId(room);
+      if (turn === playerId) return '당신 차례 — 행동을 고르세요.';
+      return (room.players[turn]?.name || '?') + ' 님 차례입니다.';
+    }
+    if (p.type === 'massDiscard') return '전원 버리기 — 손에서 카드 1장을 고르세요.';
+    if (p.type === 'massPass') return '전원 돌리기 — 넘길 카드 1장을 고르세요.';
+    if (p.type === 'trade') {
+      if (p.toId === playerId) return '1:1 제안 도착 — 수락/거절하세요.';
+      if (p.fromId === playerId) return '1:1 응답 대기 중…';
+      return '다른 플레이어가 1:1 거래 중…';
+    }
+    if (p.type === 'clinicalDirection') {
+      if (p.playerId === playerId) return '임상 실험 — 방향을 고르세요.';
+      return '임상 실험 방향 결정 중…';
+    }
+    if (p.type === 'clinicalPick') {
+      if ((p.need || []).includes(playerId) && p.selections[playerId] == null) return '임상 실험 — 가져올 카드를 고르세요.';
+      return '임상 실험 — 다른 사람 선택 대기…';
+    }
+    if (p.type === 'claudiusPick') return '속임수 왕 선택 중…';
+    return '';
+  }
+
+  addBot(socketId) {
+    const ctx = this.getPlayerBySocket(socketId);
+    if (!ctx) return { error: '방에 있지 않습니다.' };
+    const { room, playerId } = ctx;
+    if (room.status !== 'lobby') return { error: '대기실에서만 봇을 추가할 수 있습니다.' };
+    if (room.hostId !== playerId) return { error: '호스트만 봇을 추가할 수 있습니다.' };
+    if (room.order.length >= 7) return { error: '방이 가득 찼습니다.' };
+    const n = room.order.filter((id) => room.players[id]?.isBot).length + 1;
+    const botId = makeId();
+    room.players[botId] = {
+      id: botId,
+      name: '봇' + n,
+      socketId: null,
+      connected: true,
+      sessionToken: null,
+      isBot: true,
+    };
+    room.order.push(botId);
+    this.pushLog(room, '봇' + n + '이 입장했습니다.');
+    this.touch(room);
+    return { room };
+  }
+
+  nextRound(socketId) {
+    const ctx = this.getPlayerBySocket(socketId);
+    if (!ctx) return { error: '방 없음' };
+    const { room, playerId } = ctx;
+    if (room.hostId !== playerId) return { error: '호스트만 가능' };
+    if (room.status !== 'ended') return { error: '종료된 판에서만 가능' };
+    const hasBot = room.order.some((id) => room.players[id]?.isBot);
+    const setup = setupGame(room.order.slice(), {
+      placebo: room.expansionPlacebo,
+      romance: room.expansionRomance,
+      disableSilent: hasBot,
+    });
+    room.antidoteFormulaId = setup.antidoteFormulaId;
+    room.hands = setup.hands;
+    room.workstations = setup.workstations;
+    room.config = setup.config;
+    room.formulas = setup.formulas;
+    room.seatOrder = setup.seatIds;
+    room.idBadges = setup.idBadges || {};
+    room.romanceDeck = setup.romanceDeck || [];
+    room.romance = {};
+    room.romanceDrawn = {};
+    room.othelloLovers = {};
+    room.claudiusPicks = {};
+    room.pendingPlaceboSwap = null;
+    room.pending = null;
+    room.winners = [];
+    room.scores = {};
+    room.turnIndex = Math.floor(Math.random() * room.order.length);
+    room.status = 'playing';
+    this.pushLog(room, '시리즈 다음 판 시작! (누적 점수 유지)');
+    this.touch(room);
+    return { room };
+  }
+
+  /** Simple bot AI */
+  runBots(room) {
+    if (!room || room.status === 'lobby') return false;
+    let acted = false;
+    const bots = room.order.filter((id) => room.players[id]?.isBot);
+    if (!bots.length) return false;
+
+    // pending selections
+    const p = room.pending;
+    if (p && (p.type === 'massDiscard' || p.type === 'massPass')) {
+      for (const bid of bots) {
+        if ((p.need || []).includes(bid) && !p.selections[bid]) {
+          const hand = room.hands[bid] || [];
+          if (hand.length) {
+            p.selections[bid] = hand[0].id;
+            acted = true;
+          }
+        }
+      }
+      if (acted) this.tryResolvePending(room);
+      return true;
+    }
+    if (p && p.type === 'clinicalPick') {
+      for (const bid of bots) {
+        if ((p.need || []).includes(bid) && p.selections[bid] == null) {
+          const opts = this.clinicalOptions(room, bid, p.direction);
+          if (opts.length) {
+            p.selections[bid] = opts[0].idx;
+            acted = true;
+          }
+        }
+      }
+      if (acted) this.tryResolveClinicalPick(room);
+      return true;
+    }
+    if (p && p.type === 'clinicalDirection' && bots.includes(p.playerId)) {
+      // bot chooses self direction without socket
+      const fake = { id: 'bot-socket' };
+      // temporarily bind? call logic inline via direct method by faking getPlayerBySocket is hard
+      room._botClinical = true;
+      const dir = 'self';
+      const need = [];
+      const sources = {};
+      for (const pid of room.order) {
+        const opts = this.clinicalOptions(room, pid, dir);
+        if (opts.length) {
+          need.push(pid);
+          sources[pid] = this.clinicalSourceId(room, pid, dir);
+        }
+      }
+      if (!need.length) {
+        room.pending = null;
+        this.advanceTurn(room);
+        return true;
+      }
+      room.pending = { type: 'clinicalPick', direction: dir, need, sources, selections: {} };
+      this.pushLog(room, '임상 실험: 본인 내 앞에서 선택 (봇)');
+      return true;
+    }
+    if (p && p.type === 'trade' && bots.includes(p.toId)) {
+      const hand = room.hands[p.toId] || [];
+      if (hand.length) {
+        this.respondTradeBot(room, p.toId, hand[Math.floor(Math.random() * hand.length)].id);
+        return true;
+      }
+    }
+    if (p && p.type === 'claudiusPick') {
+      for (const bid of bots) {
+        if ((p.need || []).includes(bid) && !room.claudiusPicks[bid]) {
+          const ws = room.workstations[bid] || [];
+          if (ws.length) {
+            room.claudiusPicks[bid] = { card: ws[0].card };
+            ws.splice(0, 1);
+            acted = true;
+          }
+        }
+      }
+      if (acted) this.tryFinishClaudius(room);
+      return acted;
+    }
+
+    if (room.status !== 'playing' || room.pending) return acted;
+    const turn = this.currentPlayerId(room);
+    if (!bots.includes(turn)) return false;
+    // bot turn: discard if everyone has cards else pass attempt
+    const need = this.humansWithCards(room);
+    // use bot as initiator without socket - internal methods
+    room.pending = {
+      type: 'massDiscard',
+      initiatorId: turn,
+      selections: {},
+      need: need.slice(),
+    };
+    this.pushLog(room, room.players[turn].name + ': 버리기 선언');
+    for (const bid of bots) {
+      if (need.includes(bid) && (room.hands[bid] || []).length) {
+        room.pending.selections[bid] = room.hands[bid][0].id;
+      }
+    }
+    this.tryResolvePending(room);
+    return true;
+  }
+
+  respondTradeBot(room, botId, responseCardId) {
+    const t = room.pending;
+    if (!t || t.type !== 'trade' || t.toId !== botId) return;
+    const offer = this.findCard(room.hands[t.fromId], t.offerCardId);
+    const response = this.findCard(room.hands[t.toId], responseCardId);
+    if (!offer || !response) {
+      room.pending = null;
+      return;
+    }
+    this.removeCard(room.hands[t.fromId], t.offerCardId);
+    this.removeCard(room.hands[t.toId], responseCardId);
+    room.hands[t.fromId].push(response);
+    room.hands[t.toId].push(offer);
+    this.pushLog(room, room.players[t.fromId].name + ' ↔ ' + room.players[botId].name + ' 교환');
+    room.pending = null;
+    this.advanceTurn(room);
   }
 
   viewForSocket(socketId) {

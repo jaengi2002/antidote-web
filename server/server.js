@@ -73,6 +73,17 @@ function replySession(socket, result, cb) {
   emitViews(result.room);
 }
 
+function runBotsAndEmit(room) {
+  if (!room) return;
+  let guard = 0;
+  while (guard < 8) {
+    guard += 1;
+    const acted = rooms.runBots(room);
+    if (!acted) break;
+  }
+  emitViews(room);
+}
+
 function act(socket, fn, cb) {
   try {
     const result = fn();
@@ -82,6 +93,10 @@ function act(socket, fn, cb) {
     }
     if (typeof cb === 'function') cb({ ok: true });
     emitViews(result.room);
+    // bots act after short delay so humans see intermediate state
+    if (result.room) {
+      setTimeout(() => runBotsAndEmit(result.room), 350);
+    }
   } catch (e) {
     if (typeof cb === 'function') cb({ ok: false, error: e.message });
   }
@@ -124,6 +139,8 @@ io.on('connection', (socket) => {
   socket.on('setExpansions', (payload, cb) =>
     act(socket, () => rooms.setExpansions(socket.id, payload || {}), cb)
   );
+  socket.on('addBot', (cb) => act(socket, () => rooms.addBot(socket.id), cb));
+  socket.on('nextRound', (cb) => act(socket, () => rooms.nextRound(socket.id), cb));
 
   // Official actions
   socket.on('beginMassDiscard', (cb) => act(socket, () => rooms.beginMassDiscard(socket.id), cb));
@@ -135,6 +152,9 @@ io.on('connection', (socket) => {
   );
   socket.on('clinicalChooseDirection', ({ direction }, cb) =>
     act(socket, () => rooms.clinicalChooseDirection(socket.id, direction), cb)
+  );
+  socket.on('clinicalPickCard', ({ workstationIndex }, cb) =>
+    act(socket, () => rooms.clinicalPickCard(socket.id, workstationIndex), cb)
   );
   socket.on('placeboSwap', (payload, cb) =>
     act(socket, () => rooms.placeboSwap(socket.id, payload || {}), cb)

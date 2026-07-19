@@ -111,7 +111,8 @@ function setupGame(humanIds, options = {}) {
 
   const cfg = table1(humans);
   const formulas = activeFormulas(cfg.formulas);
-  const silentMode = humans === 2;
+  // 2인 + 투명 플레이어. 봇이 끼면 투명 규칙 미사용.
+  const silentMode = humans === 2 && !options.disableSilent;
   // 확장: 2인(투명) 규칙과 동시 사용 금지 (룰북)
   const placeboOn = !!options.placebo && !silentMode;
   const romanceOn = !!options.romance && !silentMode;

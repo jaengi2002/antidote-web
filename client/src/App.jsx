@@ -713,17 +713,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Formula legend */}
-      <div className="legend-bar">
-        {formulas.map((f) => (
-          <FormulaChip
-            key={f.id}
-            formula={f}
-            eliminated={(state.eliminatedFormulas || []).includes(f.id)}
-            size="sm"
-          />
-        ))}
-      </div>
+      {/* No formula legend / auto-elim strip — memory is the game */}
 
       {/* My hand */}
       <div className="hand-dock">
@@ -732,8 +722,8 @@ export default function App() {
             <h2>내 손패 · {me?.name || '나'}</h2>
             <span className="hand-dock__hint">
               {state.isMyTurn
-                ? '카드를 고른 뒤 아래 행동을 선택하세요'
-                : '다른 연구자의 차례 — 버린 카드를 관찰하세요'}
+                ? '카드를 고른 뒤 행동을 선택하세요'
+                : '다른 연구자 차례 — 공개된 카드를 눈으로만 추적하세요'}
             </span>
           </div>
           <div className="hand-fan">
@@ -752,16 +742,6 @@ export default function App() {
               />
             ))}
           </div>
-          {(state.eliminatedFormulas || []).length > 0 && (
-            <div className="elim-row">
-              <span className="elim-row__label">손의 X로 배제한 독 (해독제 아님)</span>
-              {formulas
-                .filter((f) => state.eliminatedFormulas.includes(f.id))
-                .map((f) => (
-                  <FormulaChip key={f.id} formula={f} eliminated size="sm" />
-                ))}
-            </div>
-          )}
         </div>
       </div>
 
@@ -790,8 +770,8 @@ export default function App() {
             {action === 'discard' && (
               <>
                 <p className="console__help">
-                  선택한 카드를 <strong>공개 더미</strong>에 버립니다. 모두가 내용을 봅니다. 정보와
-                  동시에 손에서 잃는 트레이드오프입니다.
+                  카드를 테이블에 <strong>공개</strong>로 버립니다. 모두가 볼 수 있지만, 누가 뭘
+                  기억하느냐가 갈립니다.
                 </p>
                 <button type="button" className="btn btn--primary" onClick={doDiscard}>
                   선택한 카드 공개 버리기
@@ -890,12 +870,14 @@ export default function App() {
                       key={f.id}
                       formula={f}
                       selected={adminFormula === f.id}
-                      eliminated={(state.eliminatedFormulas || []).includes(f.id)}
                       onClick={() => setAdminFormula(f.id)}
                       size="md"
                     />
                   ))}
                 </div>
+                <p className="console__help">
+                  후보 정리는 앱이 하지 않습니다. 손과 테이블에서 본 것만으로 고르세요.
+                </p>
                 <button type="button" className="btn btn--danger" onClick={doAdminister}>
                   해독제 투여 · 판 종료
                 </button>

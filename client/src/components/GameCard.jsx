@@ -94,9 +94,9 @@ export function GameCard({
               <div className="gcard__subtitle">{nameEn}</div>
               <div className="gcard__footer-line">
                 {isX ? (
-                  <span className="gcard__tag gcard__tag--x">해독제 후보 아님 (손에 있으면)</span>
+                  <span className="gcard__tag gcard__tag--x">X</span>
                 ) : (
-                  <span className="gcard__tag">연구 수치 {rank}</span>
+                  <span className="gcard__tag">{rank}</span>
                 )}
               </div>
             </>

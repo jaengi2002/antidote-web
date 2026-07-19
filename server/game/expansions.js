@@ -6,50 +6,50 @@
 const ROMANCE_DEFS = [
   {
     id: 'romeo',
-    name: '로미오',
+    name: '연인(남)',
     pair: 'juliet',
-    summary: '애인과 둘 다 해독제를. 애인 죽으면 나도 패배. 둘 다 살면 점수 합산.',
+    summary: '짝과 둘 다 해독제를 마셔야 함. 짝이 죽으면 나도 패배. 둘 다 살면 점수 합산.',
   },
   {
     id: 'juliet',
-    name: '줄리엣',
+    name: '연인(여)',
     pair: 'romeo',
-    summary: '애인(로미오)과 둘 다 해독제를. 둘 다 살면 점수 합산.',
+    summary: '짝과 둘 다 해독제를 마셔야 함. 둘 다 살면 점수 합산.',
   },
   {
     id: 'hermia',
-    name: '헤르미아',
+    name: '옆자리 연인',
     pair: 'lysander',
-    summary: '애인이 해독제를 마시면 생존. 왼쪽 이웃과 마지막 카드 공유(예시 규칙).',
+    summary: '왼쪽 옆 사람이 해독제를 마시면 나도 산 것으로 침. 점수 공유.',
     seatLover: 'left',
   },
   {
     id: 'lysander',
-    name: '라이샌더',
+    name: '옆자리 응원',
     pair: 'hermia',
-    summary: '애인(왼쪽 이웃)이 해독제를 마시면 생존 +2.',
+    summary: '왼쪽 옆 사람이 해독제를 마시면 생존 + 점수에 2점.',
     seatLover: 'left',
   },
   {
     id: 'antonio',
-    name: '안토니오',
-    summary: '나도 살아야 함. 다른 생존자 1명당 +1.',
+    name: '착한 동료',
+    summary: '나도 살아야 함. 다른 산 사람 1명마다 +1점.',
   },
   {
     id: 'iago',
-    name: '이아고',
-    summary: '나도 살아야 함. 사망자 1명당 +1.',
+    name: '복수자',
+    summary: '나도 살아야 함. 죽은 사람 1명마다 +1점.',
   },
   {
     id: 'othello',
-    name: '오셀로',
-    summary: '나도 살아야 함. 나와 지정 애인만 생존 시 인원수만큼 보너스.',
+    name: '질투하는 애인',
+    summary: '나도 살아야 함. 나와 고른 애인만 살면 인원 수만큼 보너스.',
     needsLoverPick: true,
   },
   {
     id: 'claudius',
-    name: '클라우디우스',
-    summary: '종료 전 WS에서 뽑은 카드가 마신 약. 손의 원래 마지막 카드 제조법 마신 사람 수만큼 +1.',
+    name: '속임수 왕',
+    summary: '끝나기 전 「내 앞」에서 고른 카드가 마신 약. 손에 남은 약과 같은 걸 마신 사람 수만큼 +1.',
     needsWsPick: true,
   },
 ];
@@ -72,9 +72,9 @@ function makeExpansionCards(t5) {
       type: 'placebo',
       formulaId: null,
       value: null,
-      label: '플라시보',
-      name: '플라시보',
-      nameEn: 'Placebo',
+      label: '속임수 약',
+      name: '속임수 약',
+      nameEn: 'Fake Med',
       symbol: 'bio',
     });
   }
@@ -86,7 +86,7 @@ function makeExpansionCards(t5) {
       value: null,
       label: '임상 실험',
       name: '임상 실험',
-      nameEn: 'Clinical Trial',
+      nameEn: 'Trial',
       symbol: 'molecule',
     });
   }
@@ -96,8 +96,8 @@ function makeExpansionCards(t5) {
       type: 'syringe',
       formulaId: null,
       value: null,
-      label: '주사기',
-      name: '주사기',
+      label: '주사',
+      name: '주사',
       nameEn: 'Syringe',
       symbol: 'syringe',
     });
@@ -276,12 +276,12 @@ function computeEndScores(room, formulaById) {
       if (rom.id === 'antonio') {
         const others = order.filter((id) => id !== pid && survived[id]).length;
         s += others;
-        notes.push(`${room.players[pid]?.name}: 안토니오 +${others}`);
+        notes.push(`${room.players[pid]?.name}: 착한 동료 +${others}`);
       }
       if (rom.id === 'iago') {
         const dead = order.filter((id) => !survived[id]).length;
         s += dead;
-        notes.push(`${room.players[pid]?.name}: 이아고 +${dead}`);
+        notes.push(`${room.players[pid]?.name}: 복수자 +${dead}`);
       }
       if (rom.id === 'othello') {
         const lover = loverOf(pid);
@@ -292,7 +292,7 @@ function computeEndScores(room, formulaById) {
           order.every((id) => id === pid || id === lover || !survived[id]);
         if (onlyTwo) {
           s += n;
-          notes.push(`${room.players[pid]?.name}: 오셀로 +${n}`);
+          notes.push(`${room.players[pid]?.name}: 질투하는 애인 +${n}`);
         }
       }
       if (rom.id === 'claudius') {
@@ -305,37 +305,34 @@ function computeEndScores(room, formulaById) {
             return c && (c.type === 'number' || c.type === 'x') && c.formulaId === fid;
           }).length;
           s += count;
-          notes.push(`${room.players[pid]?.name}: 클라우디우스 +${count}`);
+          notes.push(`${room.players[pid]?.name}: 속임수 왕 +${count}`);
         }
       }
     }
     scores[pid] = s;
   }
 
-  // ID badges (after romance)
+  // 담당 표 (로맨스/비밀목표 점수 다음)
   if (room.config?.placebo && room.idBadges) {
     for (const pid of order) {
       const badge = room.idBadges[pid];
       if (!badge) continue;
       const badgeF = badge.formulaId;
       if (badgeF === trueId) {
-        // 담당 제조법 = 해독제 → 실패한 사람 1명당 -1
         const fails = order.filter((id) => !survived[id]).length;
         scores[pid] -= fails;
-        notes.push(`${room.players[pid]?.name}: ID(해독제 담당) −${fails}`);
+        notes.push(`${room.players[pid]?.name}: 담당 표(진짜 해독제) −${fails}`);
       } else {
-        // 담당 ≠ 해독제 → 그 제조법 마신 사람마다 그 사람들 -1? 룰: 당신은 그 제조법 마신 모든 플레이어 1점 감점
-        // "당신은 당신의 제조법으로 만든 해독약을 마신 모든 플레이어이들 1점을 감점시킵니다"
-        // so each player who drank badge formula loses 1 (applied by badge holder effect on them)
         for (const id of order) {
           const c = drunk[id].card;
           if (c && c.type === 'number' && c.formulaId === badgeF) {
             scores[id] -= 1;
           }
         }
-        notes.push(`${room.players[pid]?.name}: ID(${formulaById(badgeF)?.name || badgeF}) 피해 분배`);
+        notes.push(
+          `${room.players[pid]?.name}: 담당 표(${formulaById(badgeF)?.name || badgeF}) 피해`
+        );
       }
-      // "혹은 살아남으면 0 이하로 안 감" — floor at 0 if survived
       if (survived[pid] && scores[pid] < 0) scores[pid] = 0;
     }
   }

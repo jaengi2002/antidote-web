@@ -5,15 +5,15 @@
  */
 
 const FORMULAS = [
-  { id: 'A', code: 'A', name: '적철독', nameEn: 'Ferric', color: '#8B1E1E', colorSoft: '#F5E6E6', ink: '#4A0F0F', symbol: 'skull' },
-  { id: 'B', code: 'B', name: '청람독', nameEn: 'Azure', color: '#1B4F72', colorSoft: '#E6F0F5', ink: '#0D2A3D', symbol: 'drop' },
-  { id: 'C', code: 'C', name: '녹청독', nameEn: 'Viridian', color: '#1E6B3A', colorSoft: '#E6F5EC', ink: '#0D3A1C', symbol: 'leaf' },
-  { id: 'D', code: 'D', name: '호박독', nameEn: 'Amber', color: '#8B6914', colorSoft: '#F7F1DE', ink: '#4A3808', symbol: 'bio' },
-  { id: 'E', code: 'E', name: '자정독', nameEn: 'Violet', color: '#5B2C6F', colorSoft: '#F0E6F5', ink: '#2E1538', symbol: 'crystal' },
-  { id: 'F', code: 'F', name: '주황독', nameEn: 'Rust', color: '#A04000', colorSoft: '#F8EBE0', ink: '#5A2400', symbol: 'flame' },
-  { id: 'G', code: 'G', name: '청록독', nameEn: 'Teal', color: '#0E6655', colorSoft: '#E0F5F1', ink: '#063D33', symbol: 'molecule' },
-  // 7인 전용 8번째 제조법 (Agent-U). 2–6인이면 상자(미사용).
-  { id: 'U', code: 'U', name: 'Agent-U', nameEn: 'Agent-U', color: '#4A5568', colorSoft: '#E8ECF0', ink: '#1A202C', symbol: 'molecule' },
+  { id: 'A', code: 'A', name: '해골', nameEn: 'Skull', color: '#8B1E1E', colorSoft: '#F5E6E6', ink: '#4A0F0F', symbol: 'skull' },
+  { id: 'B', code: 'B', name: '물방울', nameEn: 'Drop', color: '#1B4F72', colorSoft: '#E6F0F5', ink: '#0D2A3D', symbol: 'drop' },
+  { id: 'C', code: 'C', name: '이파리', nameEn: 'Leaf', color: '#1E6B3A', colorSoft: '#E6F5EC', ink: '#0D3A1C', symbol: 'leaf' },
+  { id: 'D', code: 'D', name: '위험', nameEn: 'Hazard', color: '#8B6914', colorSoft: '#F7F1DE', ink: '#4A3808', symbol: 'bio' },
+  { id: 'E', code: 'E', name: '수정', nameEn: 'Crystal', color: '#5B2C6F', colorSoft: '#F0E6F5', ink: '#2E1538', symbol: 'crystal' },
+  { id: 'F', code: 'F', name: '불꽃', nameEn: 'Flame', color: '#A04000', colorSoft: '#F8EBE0', ink: '#5A2400', symbol: 'flame' },
+  { id: 'G', code: 'G', name: '분자', nameEn: 'Molecule', color: '#0E6655', colorSoft: '#E0F5F1', ink: '#063D33', symbol: 'molecule' },
+  // 7인 전용 8번째 (Agent-U). 2–6인이면 미사용.
+  { id: 'U', code: 'U', name: '유령', nameEn: 'Ghost', color: '#4A5568', colorSoft: '#E8ECF0', ink: '#1A202C', symbol: 'molecule' },
 ];
 
 /**
@@ -41,7 +41,9 @@ function activeFormulas(formulaCount) {
 
 function cardLabel(type, formulaId, value) {
   const f = formulaById(formulaId);
-  if (type === 'syringe') return '주사기';
+  if (type === 'syringe') return '주사';
+  if (type === 'placebo') return '속임수 약';
+  if (type === 'clinical') return '임상 실험';
   if (!f) return '?';
   if (type === 'x') return `${f.name} X`;
   return `${f.name} ${value}`;
@@ -49,15 +51,37 @@ function cardLabel(type, formulaId, value) {
 
 function makeCard(partial) {
   const f = partial.formulaId ? formulaById(partial.formulaId) : null;
+  const typeName =
+    partial.type === 'syringe'
+      ? '주사'
+      : partial.type === 'placebo'
+        ? '속임수 약'
+        : partial.type === 'clinical'
+          ? '임상 실험'
+          : null;
   return {
     id: partial.id,
     type: partial.type,
     formulaId: partial.formulaId ?? null,
     value: partial.value ?? null,
     label: partial.label || cardLabel(partial.type, partial.formulaId, partial.value),
-    name: partial.type === 'syringe' ? '주사기' : f?.name || partial.name,
-    nameEn: partial.type === 'syringe' ? 'Syringe' : f?.nameEn || partial.nameEn,
-    symbol: partial.type === 'syringe' ? 'syringe' : f?.symbol || partial.symbol,
+    name: typeName || f?.name || partial.name,
+    nameEn:
+      partial.type === 'syringe'
+        ? 'Syringe'
+        : partial.type === 'placebo'
+          ? 'Fake Med'
+          : partial.type === 'clinical'
+            ? 'Trial'
+            : f?.nameEn || partial.nameEn,
+    symbol:
+      partial.type === 'syringe'
+        ? 'syringe'
+        : partial.type === 'placebo'
+          ? 'bio'
+          : partial.type === 'clinical'
+            ? 'molecule'
+            : f?.symbol || partial.symbol,
   };
 }
 
@@ -102,7 +126,7 @@ function setupGame(humanIds, options = {}) {
   // 3. 기본 주사기 + 남은 X 시드 (표5 추가 주사기는 숫자 덱에 섞음)
   const baseSyringes = [];
   for (let i = 0; i < cfg.syringes; i++) {
-    baseSyringes.push(makeCard({ id: `SYR-${i + 1}`, type: 'syringe' }));
+    baseSyringes.push(makeCard({ id: `SYR-${i + 1}`, type: 'syringe', label: '주사', name: '주사' }));
   }
   const seedPool = shuffle([...remainingX, ...baseSyringes]);
   const hands = {};

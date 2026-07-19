@@ -1,4 +1,4 @@
-import { SymbolGlyph } from './symbols';
+﻿import { SymbolGlyph } from './symbols';
 
 function formulaMeta(formulas, formulaId) {
   return formulas?.find((f) => f.id === formulaId) || null;
@@ -42,18 +42,18 @@ export function GameCard({
   const symbol = card.symbol || f?.symbol || (isPlacebo ? 'bio' : isClinical ? 'molecule' : 'skull');
   const rank = isX ? 'X' : isSyringe ? 'S' : isPlacebo ? 'P' : isClinical ? 'C' : String(card.value ?? '');
   const name = isSyringe
-    ? '주사기'
+    ? '주사'
     : isPlacebo
-      ? '플라시보'
+      ? '속임수 약'
       : isClinical
         ? '임상 실험'
         : f?.name || card.name || card.label;
   const nameEn = isSyringe
-    ? 'SYRINGE'
+    ? 'SHOT'
     : isPlacebo
-      ? 'PLACEBO'
+      ? 'FAKE'
       : isClinical
-        ? 'CLINICAL'
+        ? 'TRIAL'
         : f?.nameEn || card.nameEn || '';
 
   const classNames = [
@@ -103,7 +103,7 @@ export function GameCard({
           {isSpecial ? (
             <>
               <div className="gcard__syringe-badge">
-                {isSyringe ? 'TOOL' : isPlacebo ? 'PLACEBO' : 'TRIAL'}
+                {isSyringe ? '주사' : isPlacebo ? '속임수' : '실험'}
               </div>
               <div className="gcard__hero gcard__hero--syringe">
                 <SymbolGlyph symbol={isSyringe ? 'syringe' : symbol} />
@@ -113,7 +113,7 @@ export function GameCard({
             </>
           ) : (
             <>
-              {isX && <div className="gcard__ribbon">TOXIN · X</div>}
+              {isX && <div className="gcard__ribbon">독소 · X</div>}
               <div className="gcard__hero" style={{ color }}>
                 <SymbolGlyph symbol={symbol} />
               </div>

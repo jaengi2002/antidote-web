@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 import { CardBack, FormulaChip, GameCard } from './components/GameCard';
 import { RulesPanel } from './components/RulesPanel';
@@ -38,19 +38,19 @@ function getSocket() {
 }
 
 const SAMPLE_FORMULAS = [
-  { id: 'A', name: '적철독', nameEn: 'Ferric', color: '#8B1E1E', colorSoft: '#F5E6E6', ink: '#4A0F0F', symbol: 'skull' },
-  { id: 'B', name: '청람독', nameEn: 'Azure', color: '#1B4F72', colorSoft: '#E6F0F5', ink: '#0D2A3D', symbol: 'drop' },
-  { id: 'C', name: '녹청독', nameEn: 'Viridian', color: '#1E6B3A', colorSoft: '#E6F5EC', ink: '#0D3A1C', symbol: 'leaf' },
-  { id: 'D', name: '호박독', nameEn: 'Amber', color: '#8B6914', colorSoft: '#F7F1DE', ink: '#4A3808', symbol: 'bio' },
-  { id: 'E', name: '자정독', nameEn: 'Violet', color: '#5B2C6F', colorSoft: '#F0E6F5', ink: '#2E1538', symbol: 'crystal' },
-  { id: 'F', name: '주황독', nameEn: 'Rust', color: '#A04000', colorSoft: '#F8EBE0', ink: '#5A2400', symbol: 'flame' },
-  { id: 'G', name: '청록독', nameEn: 'Teal', color: '#0E6655', colorSoft: '#E0F5F1', ink: '#063D33', symbol: 'molecule' },
+  { id: 'A', name: '해골', nameEn: 'Skull', color: '#8B1E1E', colorSoft: '#F5E6E6', ink: '#4A0F0F', symbol: 'skull' },
+  { id: 'B', name: '물방울', nameEn: 'Drop', color: '#1B4F72', colorSoft: '#E6F0F5', ink: '#0D2A3D', symbol: 'drop' },
+  { id: 'C', name: '이파리', nameEn: 'Leaf', color: '#1E6B3A', colorSoft: '#E6F5EC', ink: '#0D3A1C', symbol: 'leaf' },
+  { id: 'D', name: '위험', nameEn: 'Hazard', color: '#8B6914', colorSoft: '#F7F1DE', ink: '#4A3808', symbol: 'bio' },
+  { id: 'E', name: '수정', nameEn: 'Crystal', color: '#5B2C6F', colorSoft: '#F0E6F5', ink: '#2E1538', symbol: 'crystal' },
+  { id: 'F', name: '불꽃', nameEn: 'Flame', color: '#A04000', colorSoft: '#F8EBE0', ink: '#5A2400', symbol: 'flame' },
+  { id: 'G', name: '분자', nameEn: 'Molecule', color: '#0E6655', colorSoft: '#E0F5F1', ink: '#063D33', symbol: 'molecule' },
 ];
 
 const SAMPLE_CARDS = [
-  { id: 's1', type: 'number', formulaId: 'A', value: 3, label: '적철독 3', symbol: 'skull', name: '적철독', nameEn: 'Ferric' },
-  { id: 's2', type: 'x', formulaId: 'B', label: '청람독 X', symbol: 'drop', name: '청람독', nameEn: 'Azure' },
-  { id: 's3', type: 'syringe', label: '주사기', symbol: 'syringe' },
+  { id: 's1', type: 'number', formulaId: 'A', value: 3, label: '해골 3', symbol: 'skull', name: '해골', nameEn: 'Skull' },
+  { id: 's2', type: 'x', formulaId: 'B', label: '물방울 X', symbol: 'drop', name: '물방울', nameEn: 'Drop' },
+  { id: 's3', type: 'syringe', label: '주사', symbol: 'syringe', name: '주사', nameEn: 'Syringe' },
 ];
 
 export default function App() {
@@ -274,8 +274,8 @@ export default function App() {
               해독제 <em>Antidote</em>
             </h1>
             <p className="landing-hero__lead">
-              번역 룰북 기준: 표1 세팅, 전원 동시 버리기, 워크스테이션, 패스/1:1, 주사기, 타임
-              아웃 점수. 2인은 투명 플레이어 포함.
+              전원 같이 버리기, 각자 내 앞, 패스·맞교환, 주사, 마지막 한 장. 약은 해골·물방울 같은
+              쉬운 별명. 확장: 속임수 약 · 비밀 목표.
             </p>
             <div className={`conn-pill ${connected ? 'is-on' : ''}`}>
               <span className="conn-pill__dot" />
@@ -401,7 +401,7 @@ export default function App() {
                         )
                       }
                     />
-                    플라시보 효과 (ID·임상·플라시보)
+                    속임수 약 확장 (담당 표·임상·속임수 약)
                   </label>
                   <label style={{ display: 'flex', gap: 8, alignItems: 'center', textTransform: 'none', letterSpacing: 0, fontSize: 14 }}>
                     <input
@@ -418,13 +418,13 @@ export default function App() {
                         )
                       }
                     />
-                    연구소 로맨스
+                    비밀 목표
                   </label>
                 </div>
               )}
               {!iAmHost && (
                 <p style={{ fontSize: 13, opacity: 0.75 }}>
-                  확장: 플라시보 {state.expansionPlacebo ? 'ON' : 'OFF'} · 로맨스{' '}
+                  확장: 속임수 약 {state.expansionPlacebo ? 'ON' : 'OFF'} · 비밀 목표{' '}
                   {state.expansionRomance ? 'ON' : 'OFF'}
                 </p>
               )}
@@ -542,7 +542,7 @@ export default function App() {
           <h1>해독제 · 본작 규칙</h1>
           {state.config && (
             <span style={{ fontSize: 12, opacity: 0.65, marginLeft: 8 }}>
-              포뮬러 {state.config.formulas} · 숫자 1–{state.config.maxNumber} · 주사기{' '}
+              포뮬러 {state.config.formulas} · 숫자 1–{state.config.maxNumber} · 주사{' '}
               {state.config.syringes}
               {state.silentMode ? ' · 투명P' : ''}
             </span>
@@ -600,7 +600,7 @@ export default function App() {
             <h2>{pending.type === 'massDiscard' ? '버리기 카드 선택' : '패스할 카드 선택'}</h2>
             <p>
               {pending.type === 'massDiscard'
-                ? '전원 동시에 워크스테이션으로 버립니다. X는 뒷면, 나머지는 앞면.'
+                ? '전원 동시에 내 앞으로 버립니다. X는 뒷면, 나머지는 앞면.'
                 : `전원 ${pending.direction === 'left' ? '왼쪽' : '오른쪽'}으로 1장 패스합니다. 건넨 뒤에야 받은 카드를 봅니다.`}
             </p>
             <div className="hand-fan">
@@ -688,7 +688,7 @@ export default function App() {
         <div className="modal-backdrop">
           <div className="modal">
             <h2>임상 실험 — 방향</h2>
-            <p>전원 지정한 방향의 워크스테이션에서 카드 1장을 손으로 가져옵니다.</p>
+            <p>전원 지정한 방향의 내 앞에서 카드 1장을 손으로 가져옵니다.</p>
             <div className="btn-row">
               {['left', 'right', 'self'].map((d) => (
                 <button
@@ -702,7 +702,7 @@ export default function App() {
                     )
                   }
                 >
-                  {d === 'left' ? '왼쪽 WS' : d === 'right' ? '오른쪽 WS' : '본인 WS'}
+                  {d === 'left' ? '왼쪽 내 앞' : d === 'right' ? '오른쪽 내 앞' : '내 앞'}
                 </button>
               ))}
             </div>
@@ -719,8 +719,8 @@ export default function App() {
       {state.pendingPlaceboSwap?.active && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>플라시보 발동!</h2>
-            <p>손패 카드와 워크스테이션 카드를 1장씩 고르면 교환합니다. 패스도 가능합니다.</p>
+            <h2>속임수 약 발동!</h2>
+            <p>손패 카드와 내 앞 카드를 1장씩 고르면 교환합니다. 패스도 가능합니다.</p>
             <div className="hand-fan">
               {(state.myHand || []).map((c) => (
                 <GameCard
@@ -733,7 +733,7 @@ export default function App() {
                 />
               ))}
             </div>
-            <p style={{ marginTop: 8 }}>내 워크스테이션 (교환할 칸 터치)</p>
+            <p style={{ marginTop: 8 }}>내 내 앞 (교환할 칸 터치)</p>
             <div className="hand-fan">
               {(me?.workstation || []).map((slot) => (
                 <GameCard
@@ -779,7 +779,7 @@ export default function App() {
         <div className="modal-backdrop">
           <div className="modal">
             <h2>클라우디우스 — 마실 카드</h2>
-            <p>워크스테이션에서 카드 1장을 고르세요. 이 카드가 당신이 마신 약이 됩니다.</p>
+            <p>내 앞에서 카드 1장을 고르세요. 이 카드가 당신이 마신 약이 됩니다.</p>
             <div className="hand-fan">
               {(me?.workstation || []).map((slot) => (
                 <GameCard
@@ -803,7 +803,7 @@ export default function App() {
 
       {/* Felt: opponents + workstations */}
       <div className="felt">
-        <p className="felt__section-label">연구자들 · 워크스테이션</p>
+        <p className="felt__section-label">플레이어 · 각자 내 앞</p>
         <div className="opponents" style={{ alignItems: 'flex-start' }}>
           {state.players.map((p) => (
             <div
@@ -815,7 +815,7 @@ export default function App() {
                 {p.name}
                 {p.isMe ? ' (나)' : ''}
                 <small>
-                  손 {p.handCount}장 · WS {(p.workstation || []).length}
+                  손 {p.handCount}장 · 내 앞 {(p.workstation || []).length}
                   {!p.connected ? ' · 오프라인' : ''}
                 </small>
               </div>
@@ -829,7 +829,7 @@ export default function App() {
               <div className="ws-row">
                 {(p.workstation || []).length === 0 && (
                   <span className="empty-discard" style={{ padding: 4, fontSize: 11 }}>
-                    워크스테이션 비어 있음
+                    내 앞 비어 있음
                   </span>
                 )}
                 {(p.workstation || []).map((slot) => (
@@ -864,9 +864,9 @@ export default function App() {
 
         <div className="shared-zone" style={{ marginTop: 12 }}>
           <div className="box-token">
-            <strong>SEALED</strong>
-            <strong>ANTIDOTE</strong>
-            <span>X 1장 봉인</span>
+            <strong>봉인</strong>
+            <strong>해독제</strong>
+            <span>X 1장</span>
           </div>
         </div>
       </div>
@@ -880,10 +880,10 @@ export default function App() {
             </h2>
             <span className="hand-dock__hint">
               {state.myRomance
-                ? `로맨스: ${state.myRomance.name}`
+                ? `비밀 목표: ${state.myRomance.name}`
                 : '마지막 한 장이 해독제 공식이어야 합니다'}
               {state.myBadge
-                ? ` · ID: ${formulas.find((f) => f.id === state.myBadge.formulaId)?.name || state.myBadge.formulaId}`
+                ? ` · 담당 표: ${formulas.find((f) => f.id === state.myBadge.formulaId)?.name || state.myBadge.formulaId}`
                 : ''}
             </span>
           </div>
@@ -942,8 +942,8 @@ export default function App() {
                 ['discard', '1. 버리기'],
                 ['pass', '2A. 패스'],
                 ['trade', '2B. 1:1'],
-                ['syringe', '3. 주사기'],
-                ...(state.canDrawRomance ? [['romance', '4. 로맨스']] : []),
+                ['syringe', '3. 주사'],
+                ...(state.canDrawRomance ? [['romance', '4. 비밀 목표']] : []),
               ].map(([id, label]) => (
                 <button
                   key={id}
@@ -959,7 +959,7 @@ export default function App() {
             {action === 'discard' && (
               <>
                 <p className="console__help">
-                  <strong>전원</strong>이 손에서 1장씩 각자 워크스테이션에 버립니다. 동시 공개. X는
+                  <strong>전원</strong>이 손에서 1장씩 각자 내 앞에 버립니다. 동시 공개. X는
                   뒷면.
                 </p>
                 <button type="button" className="btn btn--primary" onClick={beginDiscard}>
@@ -1012,9 +1012,9 @@ export default function App() {
             {action === 'syringe' && (
               <>
                 <p className="console__help">
-                  손의 주사기를 소모합니다. 상대 손(랜덤) 또는 워크스테이션(선택)에서 1장. 주사기는
-                  상대 WS에 앞면으로 남습니다.
-                  {!hasSyringe && ' — 지금 손에 주사기 없음.'}
+                  손의 주사를 소모합니다. 상대 손(랜덤) 또는 내 앞(선택)에서 1장. 주사는
+                  상대 내 앞에 앞면으로 남습니다.
+                  {!hasSyringe && ' — 지금 손에 주사 없음.'}
                 </p>
                 <div className="console__tabs">
                   <button
@@ -1029,7 +1029,7 @@ export default function App() {
                     className={`btn ${syringeMode === 'workstation' ? 'is-on' : ''}`}
                     onClick={() => setSyringeMode('workstation')}
                   >
-                    워크스테이션
+                    내 앞
                   </button>
                 </div>
                 <label>
@@ -1044,14 +1044,14 @@ export default function App() {
                     <option value="">선택…</option>
                     {syringeTargets.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name} (손 {p.handCount} · WS {(p.workstation || []).length})
+                        {p.name} (손 {p.handCount} · 내 앞 {(p.workstation || []).length})
                       </option>
                     ))}
                   </select>
                 </label>
                 {syringeMode === 'workstation' && (
                   <p className="console__help">
-                    위 테이블에서 상대 워크스테이션 카드를 터치해 고르세요.
+                    위 테이블에서 상대 내 앞 카드를 터치해 고르세요.
                     {wsPick != null ? ` (선택 #${wsPick + 1})` : targetWs.length ? '' : ' (비어 있음)'}
                   </p>
                 )}
@@ -1061,7 +1061,7 @@ export default function App() {
                   onClick={doSyringe}
                   disabled={!hasSyringe}
                 >
-                  주사기 사용
+                  주사 사용
                 </button>
               </>
             )}
@@ -1069,7 +1069,7 @@ export default function App() {
             {action === 'romance' && (
               <>
                 <p className="console__help">
-                  연구소 로맨스 카드를 1장 뽑습니다 (게임당 1회, 비공개). 덱{' '}
+                  비밀 목표 카드를 1장 뽑습니다 (게임당 1회, 비공개). 덱{' '}
                   {state.romanceDeckCount ?? 0}장.
                 </p>
                 <button
@@ -1077,7 +1077,7 @@ export default function App() {
                   className="btn btn--gold"
                   onClick={() => getSocket().emit('drawRomance', (res) => applyAck(res))}
                 >
-                  로맨스 카드 뽑기
+                  비밀 목표 카드 뽑기
                 </button>
               </>
             )}

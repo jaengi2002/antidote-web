@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+﻿const crypto = require('crypto');
 const { setupGame, FORMULAS, formulaById } = require('./deck');
 const { computeEndScores, romanceDef } = require('./expansions');
 
@@ -25,13 +25,13 @@ function sanitizeName(playerName) {
 function createEmptyRoom(code) {
   return {
     code,
-    hostId: null,
+    hostid: null,
     status: 'lobby',
     players: {},
     order: [], // human player order (turn order)
     seatOrder: [], // includes silent for pass adjacency
     turnIndex: 0,
-    antidoteFormulaId: null,
+    antidoteFormulaid: null,
     hands: {},
     workstations: {},
     pending: null,
@@ -258,7 +258,7 @@ class RoomManager {
     ctx.room.expansionRomance = !!romance;
     this.pushLog(
       ctx.room,
-      `확장 설정: 플라시보 ${placebo ? 'ON' : 'OFF'} · 로맨스 ${romance ? 'ON' : 'OFF'}` +
+      `확장 설정: 속임수 약 ${placebo ? 'ON' : 'OFF'} · 비밀 목표 ${romance ? 'ON' : 'OFF'}` +
         (ctx.room.order.length === 2 ? ' (2인이면 시작 시 자동 OFF)' : '')
     );
     this.touch(ctx.room);
@@ -303,10 +303,10 @@ class RoomManager {
     const c = setup.config;
     this.pushLog(
       room,
-      `게임 시작 — 표1: 포뮬러 ${c.formulas}종, 숫자 1–${c.maxNumber}, 주사기 ${c.syringes}장` +
+      `게임 시작 — 표1: 포뮬러 ${c.formulas}종, 숫자 1–${c.maxNumber}, 주사 ${c.syringes}장` +
         (c.silentMode ? ' · 투명P' : '') +
-        (c.placebo ? ' · 플라시보ON' : '') +
-        (c.romance ? ' · 로맨스ON' : '')
+        (c.placebo ? ' · 속임수약ON' : '') +
+        (c.romance ? ' · 비밀목표ON' : '')
     );
     this.touch(room);
     return { room };
@@ -357,7 +357,7 @@ class RoomManager {
     return room.order.filter((id) => (room.hands[id] || []).length > 0);
   }
 
-  // ─── 1. 카드 버리기 (전원 동시, 워크스테이션) ───
+  // ─── 1. 카드 버리기 (전원 동시, 내 앞) ───
   // 2인: 투명 플레이어는 버리지 않음 (규칙)
 
   beginMassDiscard(socketId) {
@@ -376,11 +376,11 @@ class RoomManager {
 
     room.pending = {
       type: 'massDiscard',
-      initiatorId: playerId,
+      initiatorid: playerId,
       selections: {},
       need: need.slice(),
     };
-    this.pushLog(room, `${room.players[playerId].name}님: 카드 버리기! (전원 동시 → 각자 워크스테이션, X는 뒷면)`);
+    this.pushLog(room, `${room.players[playerId].name}님: 카드 버리기! (전원 동시 → 각자 내 앞, X는 뒷면)`);
     this.touch(room);
     return { room };
   }
@@ -402,7 +402,7 @@ class RoomManager {
     room.pending = {
       type: 'massPass',
       direction,
-      initiatorId: playerId,
+      initiatorid: playerId,
       selections: {},
       need: need.slice(),
     };
@@ -456,7 +456,7 @@ class RoomManager {
     for (const pid of Object.keys(p.selections)) {
       const card = this.removeCard(room.hands[pid], p.selections[pid]);
       if (!card) continue;
-      // X·플라시보 뒷면, 임상·숫자·주사기 앞면
+      // X·속임수 약 뒷면, 임상·숫자·주사 앞면
       let faceUp = true;
       if (card.type === 'x' || card.type === 'placebo') faceUp = false;
       if (card.type === 'clinical') faceUp = true;
@@ -465,7 +465,7 @@ class RoomManager {
       if (card.type === 'clinical') clinicalDiscards.push({ playerId: pid, card });
     }
 
-    this.pushLog(room, '전원 버리기 완료. (X·플라시보 뒷면 / 나머지 앞면)');
+    this.pushLog(room, '전원 버리기 완료. (X·속임수 약 뒷면 / 나머지 앞면)');
 
     // 임상 실험: 2장 이상 동시 → 취소 / 1장 → 방향 선택 대기
     if (room.config?.placebo && clinicalDiscards.length >= 2) {
@@ -523,7 +523,7 @@ class RoomManager {
       const [taken] = ws.splice(pick.idx, 1);
       if (!room.hands[pid]) room.hands[pid] = [];
       room.hands[pid].push(taken.card);
-      // 플라시보 훔침 처리
+      // 속임수 약 훔침 처리
       if (taken.card.type === 'placebo') {
         this.triggerPlaceboReveal(room, srcId, pid);
       }
@@ -541,7 +541,7 @@ class RoomManager {
     // 주인에게 알림 + 손/WS 스왑 기회
     this.pushLog(
       room,
-      `${room.players[ownerId]?.name}님의 플라시보가 훔쳐졌습니다! (즉시 손↔WS 교환 가능)`
+      `${room.players[ownerId]?.name}님의 속임수 약가 훔쳐졌습니다! (즉시 손↔내 앞 교환 가능)`
     );
     room.pendingPlaceboSwap = { playerId: ownerId, stealerId };
   }
@@ -551,12 +551,12 @@ class RoomManager {
     if (!ctx) return { error: '방에 있지 않습니다.' };
     const { room, playerId } = ctx;
     if (!room.pendingPlaceboSwap || room.pendingPlaceboSwap.playerId !== playerId) {
-      return { error: '플라시보 교환 차례가 아닙니다.' };
+      return { error: '속임수 약 교환 차례가 아닙니다.' };
     }
     if (handCardId == null || workstationIndex == null) {
       // skip
       room.pendingPlaceboSwap = null;
-      this.pushLog(room, `${room.players[playerId].name}님: 플라시보 교환 패스`);
+      this.pushLog(room, `${room.players[playerId].name}님: 속임수 약 교환 패스`);
       this.touch(room);
       return { room };
     }
@@ -574,7 +574,7 @@ class RoomManager {
       faceUp: card.type !== 'x' && card.type !== 'placebo',
     };
     room.pendingPlaceboSwap = null;
-    this.pushLog(room, `${room.players[playerId].name}님: 플라시보 효과로 손↔WS 교환`);
+    this.pushLog(room, `${room.players[playerId].name}님: 속임수 약 확장로 손↔내 앞 교환`);
     this.touch(room);
     return { room };
   }
@@ -583,18 +583,18 @@ class RoomManager {
     const ctx = this.getPlayerBySocket(socketId);
     if (!ctx || ctx.room.status !== 'playing') return { error: '게임 중이 아닙니다.' };
     const { room, playerId } = ctx;
-    if (!room.config?.romance) return { error: '로맨스 확장이 꺼져 있습니다.' };
+    if (!room.config?.romance) return { error: '비밀 목표 확장이 꺼져 있습니다.' };
     if (room.pending) return { error: '진행 중인 행동이 있습니다.' };
     this.ensureActiveTurn(room);
     if (this.currentPlayerId(room) !== playerId) return { error: '당신의 턴이 아닙니다.' };
     if (room.romanceDrawn[playerId] || room.romance[playerId]) {
-      return { error: '이미 로맨스 카드를 뽑았습니다 (게임당 1회).' };
+      return { error: '이미 비밀 목표 카드를 뽑았습니다 (게임당 1회).' };
     }
-    if (!room.romanceDeck?.length) return { error: '로맨스 덱이 비었습니다.' };
+    if (!room.romanceDeck?.length) return { error: '비밀 목표 덱이 비었습니다.' };
     const card = room.romanceDeck.pop();
     room.romance[playerId] = card;
     room.romanceDrawn[playerId] = true;
-    this.pushLog(room, `${room.players[playerId].name}님이 연구소 로맨스 카드를 뽑았습니다. (비공개)`);
+    this.pushLog(room, `${room.players[playerId].name}님이 비밀 목표 카드를 뽑았습니다. (비공개)`);
     this.advanceTurn(room);
     return { room };
   }
@@ -603,7 +603,7 @@ class RoomManager {
     const ctx = this.getPlayerBySocket(socketId);
     if (!ctx) return { error: '방 없음' };
     const { room, playerId } = ctx;
-    if (room.romance?.[playerId]?.id !== 'othello') return { error: '오셀로만 지정 가능' };
+    if (room.romance?.[playerId]?.id !== 'othello') return { error: '질투하는 애인만 지정 가능' };
     if (!room.players[loverId] || loverId === playerId) return { error: '애인 대상 오류' };
     room.othelloLovers[playerId] = loverId;
     this.touch(room);
@@ -615,16 +615,16 @@ class RoomManager {
     if (!ctx) return { error: '방 없음' };
     const { room, playerId } = ctx;
     if (room.status !== 'ending_claudius' && room.pending?.type !== 'claudiusPick') {
-      return { error: '클라우디우스 선택 단계가 아닙니다.' };
+      return { error: '속임수 왕 선택 단계가 아닙니다.' };
     }
-    if (room.romance?.[playerId]?.id !== 'claudius') return { error: '클라우디우스만' };
+    if (room.romance?.[playerId]?.id !== 'claudius') return { error: '속임수 왕만 가능' };
     const ws = room.workstations[playerId] || [];
-    if (workstationIndex < 0 || workstationIndex >= ws.length) return { error: 'WS 인덱스 오류' };
+    if (workstationIndex < 0 || workstationIndex >= ws.length) return { error: '내 앞 칸 오류' };
     const [slot] = ws.splice(workstationIndex, 1);
     room.claudiusPicks[playerId] = { card: slot.card };
     this.pushLog(
       room,
-      `${room.players[playerId].name}(클라우디우스)가 WS 카드를 마셨습니다: ${slot.card.label}`
+      `${room.players[playerId].name}(속임수 왕)이 내 앞 카드를 마셨습니다: ${slot.card.label}`
     );
     // if all claudius done, finish end
     this.tryFinishClaudius(room);
@@ -737,8 +737,8 @@ class RoomManager {
     return { room: ctx.room };
   }
 
-  // ─── 3. 주사기: 손(랜덤) 또는 WS(선택). 훔친 자리에 주사기 놓음 ───
-  // 투명 손에서 훔치면 주사기를 뒷면으로 그 자리에 (규칙)
+  // ─── 3. 주사: 손(랜덤) 또는 WS(선택). 훔친 자리에 주사 놓음 ───
+  // 투명 손에서 훔치면 주사를 뒷면으로 그 자리에 (규칙)
 
   useSyringe(socketId, { mode, targetPlayerId, workstationIndex }) {
     const ctx = this.getPlayerBySocket(socketId);
@@ -750,7 +750,7 @@ class RoomManager {
 
     const hand = room.hands[playerId] || [];
     const syIdx = hand.findIndex((c) => c.type === 'syringe');
-    if (syIdx === -1) return { error: '손패에 주사기가 없습니다.' };
+    if (syIdx === -1) return { error: '손패에 주사가 없습니다.' };
 
     const targetId = targetPlayerId;
     if (!targetId || targetId === playerId) return { error: '대상을 선택하세요.' };
@@ -774,11 +774,11 @@ class RoomManager {
 
       if (targetId === SILENT_ID) {
         th.splice(ri, 0, syringe);
-        this.pushLog(room, `${pname}님이 주사기로 투명 플레이어 손에서 카드를 훔쳤습니다. (주사기 뒷면 교체)`);
+        this.pushLog(room, `${pname}님이 주사로 투명 플레이어 손에서 카드를 훔쳤습니다. (주사 뒷면 교체)`);
       } else {
         if (!room.workstations[targetId]) room.workstations[targetId] = [];
         room.workstations[targetId].push({ card: syringe, faceUp: true });
-        this.pushLog(room, `${pname}님이 주사기로 ${tname}님 손패에서 카드를 훔쳤습니다. (주사기→WS 앞면)`);
+        this.pushLog(room, `${pname}님이 주사로 ${tname}님 손패에서 카드를 훔쳤습니다. (주사→내 앞 앞면)`);
       }
       if (stolen.type === 'placebo' && this.isHuman(targetId)) {
         this.triggerPlaceboReveal(room, targetId, playerId);
@@ -791,14 +791,14 @@ class RoomManager {
       const ws = room.workstations[targetId] || [];
       if (!ws.length) {
         hand.push(syringe);
-        return { error: '상대 워크스테이션이 비어 있습니다.' };
+        return { error: '상대 내 앞이 비어 있습니다.' };
       }
       let wi = typeof workstationIndex === 'number' ? workstationIndex : -1;
       if (wi < 0 || wi >= ws.length) wi = ws.length - 1;
       const taken = ws[wi];
       hand.push(taken.card);
       ws[wi] = { card: syringe, faceUp: true };
-      this.pushLog(room, `${pname}님이 주사기로 ${tname} 워크스테이션 카드를 가져갔습니다.`);
+      this.pushLog(room, `${pname}님이 주사로 ${tname} 내 앞 카드를 가져갔습니다.`);
       if (taken.card.type === 'placebo' && this.isHuman(targetId)) {
         this.triggerPlaceboReveal(room, targetId, playerId);
       }
@@ -825,7 +825,7 @@ class RoomManager {
     if (claudiusPlayers.length && claudiusPlayers.some((id) => !room.claudiusPicks[id])) {
       room.status = 'ending_claudius';
       room.pending = { type: 'claudiusPick', need: claudiusPlayers };
-      this.pushLog(room, '클라우디우스: 해독제 공개 전 워크스테이션에서 마실 카드를 고르세요.');
+      this.pushLog(room, '속임수 왕: 해독제 공개 전 내 앞에서 마실 카드를 고르세요.');
       this.touch(room);
       return;
     }
@@ -915,7 +915,7 @@ class RoomManager {
         pending = {
           type: p.type,
           direction: p.direction || null,
-          initiatorId: p.initiatorId,
+          initiatorid: p.initiatorId,
           initiatorName: room.players[p.initiatorId]?.name,
           needSelect: (p.need || []).includes(playerId) && !p.selections[playerId],
           iHaveSelected: !!p.selections[playerId],
@@ -957,7 +957,7 @@ class RoomManager {
     const base = {
       code: room.code,
       status: room.status,
-      hostId: room.hostId,
+      hostid: room.hostId,
       players: playersPublic,
       turnPlayerId: room.status === 'playing' ? this.currentPlayerId(room) : null,
       isMyTurn:
@@ -984,7 +984,7 @@ class RoomManager {
       romanceDeckCount: (room.romanceDeck || []).length,
       pendingPlaceboSwap:
         room.pendingPlaceboSwap?.playerId === playerId ? { active: true } : null,
-      othelloLoverId: room.othelloLovers?.[playerId] || null,
+      othelloLoverid: room.othelloLovers?.[playerId] || null,
     };
 
     if (room.status === 'ended') {

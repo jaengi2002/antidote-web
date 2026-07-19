@@ -25,7 +25,7 @@ function sanitizeName(playerName) {
 function createEmptyRoom(code) {
   return {
     code,
-    hostid: null,
+    hostId: null,
     status: 'lobby',
     players: {},
     order: [], // human player order (turn order)
@@ -957,7 +957,7 @@ class RoomManager {
     const base = {
       code: room.code,
       status: room.status,
-      hostid: room.hostId,
+      hostId: room.hostId,
       players: playersPublic,
       turnPlayerId: room.status === 'playing' ? this.currentPlayerId(room) : null,
       isMyTurn:
@@ -984,7 +984,7 @@ class RoomManager {
       romanceDeckCount: (room.romanceDeck || []).length,
       pendingPlaceboSwap:
         room.pendingPlaceboSwap?.playerId === playerId ? { active: true } : null,
-      othelloLoverid: room.othelloLovers?.[playerId] || null,
+      othelloLoverId: room.othelloLovers?.[playerId] || null,
     };
 
     if (room.status === 'ended') {

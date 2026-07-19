@@ -345,7 +345,13 @@ export default function App() {
 
   // ═══════════ LOBBY ═══════════
   if (state.status === 'lobby') {
-    const iAmHost = state.hostId === state.me;
+    // hostId / me / isHost 중 하나라도 맞으면 호스트로 취급 (호환)
+    const iAmHost =
+      state.hostId === state.me ||
+      state.hostid === state.me ||
+      !!(state.players || []).find((p) => p.isMe && p.isHost);
+    const connectedCount = (state.players || []).filter((p) => p.connected).length;
+    const canStart = connectedCount >= 2;
     return (
       <div className="app lobby-shell">
         <div className="wrap">
@@ -429,16 +435,25 @@ export default function App() {
                 </p>
               )}
               {iAmHost ? (
-                <button
-                  type="button"
-                  className="btn btn--gold"
-                  onClick={startGame}
-                  disabled={state.players.filter((p) => p.connected).length < 2}
-                >
-                  게임 시작
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="btn btn--gold"
+                    onClick={startGame}
+                    disabled={!canStart}
+                  >
+                    게임 시작
+                  </button>
+                  {!canStart && (
+                    <p style={{ opacity: 0.7, fontSize: 13, marginTop: 8 }}>
+                      접속 인원 2명 이상이면 시작할 수 있어요. (지금 {connectedCount}명)
+                    </p>
+                  )}
+                </>
               ) : (
-                <p style={{ opacity: 0.65 }}>호스트 시작 대기…</p>
+                <p style={{ opacity: 0.65 }}>
+                  호스트 시작 대기… (방 만든 사람에게만 「게임 시작」이 보입니다)
+                </p>
               )}
               {error && <p className="msg-error">{error}</p>}
             </div>

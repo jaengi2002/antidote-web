@@ -19,6 +19,17 @@ export function GameCard({
 }) {
   if (!card) return null;
 
+  if (card.type === 'hidden') {
+    return (
+      <div className={`gcard gcard--back gcard--${size}`} title="뒷면 (X)">
+        <div className="gcard__grain" />
+        <div className="gcard__back-pattern">
+          <div className="gcard__back-seal">X?</div>
+        </div>
+      </div>
+    );
+  }
+
   const isSyringe = card.type === 'syringe';
   const isX = card.type === 'x';
   const f = isSyringe ? null : formulaMeta(formulas, card.formulaId);

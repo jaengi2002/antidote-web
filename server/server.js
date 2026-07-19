@@ -14,7 +14,7 @@ app.use(express.json());
 const rooms = new RoomManager();
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, rooms: rooms.rooms.size });
+  res.json({ ok: true, rooms: rooms.rooms.size, ruleset: 'antidote-official-v1' });
 });
 
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
@@ -28,9 +28,7 @@ if (hasClient) {
   });
 } else {
   app.get('/', (_req, res) => {
-    res.type('text').send(
-      'Antidote server OK. Build the client (npm run build) for production UI, or run Vite on :5173.'
-    );
+    res.type('text').send('Antidote server OK. Build the client for production UI.');
   });
 }
 
@@ -75,13 +73,26 @@ function replySession(socket, result, cb) {
   emitViews(result.room);
 }
 
+function act(socket, fn, cb) {
+  try {
+    const result = fn();
+    if (result.error) {
+      if (typeof cb === 'function') cb({ ok: false, error: result.error });
+      return;
+    }
+    if (typeof cb === 'function') cb({ ok: true });
+    emitViews(result.room);
+  } catch (e) {
+    if (typeof cb === 'function') cb({ ok: false, error: e.message });
+  }
+}
+
 io.on('connection', (socket) => {
   console.log('connected', socket.id);
 
   socket.on('createRoom', ({ name }, cb) => {
     try {
-      const result = rooms.createRoom(socket.id, name);
-      replySession(socket, result, cb);
+      replySession(socket, rooms.createRoom(socket.id, name), cb);
     } catch (e) {
       if (typeof cb === 'function') cb({ ok: false, error: e.message });
     }
@@ -89,8 +100,7 @@ io.on('connection', (socket) => {
 
   socket.on('joinRoom', ({ code, name }, cb) => {
     try {
-      const result = rooms.joinRoom(socket.id, code, name);
-      replySession(socket, result, cb);
+      replySession(socket, rooms.joinRoom(socket.id, code, name), cb);
     } catch (e) {
       if (typeof cb === 'function') cb({ ok: false, error: e.message });
     }
@@ -98,8 +108,7 @@ io.on('connection', (socket) => {
 
   socket.on('reconnectSession', ({ sessionToken }, cb) => {
     try {
-      const result = rooms.reconnect(socket.id, sessionToken);
-      replySession(socket, result, cb);
+      replySession(socket, rooms.reconnect(socket.id, sessionToken), cb);
     } catch (e) {
       if (typeof cb === 'function') cb({ ok: false, error: e.message });
     }
@@ -111,74 +120,36 @@ io.on('connection', (socket) => {
     if (result?.room) emitViews(result.room);
   });
 
-  socket.on('startGame', (cb) => {
-    const result = rooms.startGame(socket.id);
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
-  });
+  socket.on('startGame', (cb) => act(socket, () => rooms.startGame(socket.id), cb));
 
-  socket.on('discard', ({ cardId }, cb) => {
-    const result = rooms.discard(socket.id, cardId);
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
-  });
+  // Official actions
+  socket.on('beginMassDiscard', (cb) => act(socket, () => rooms.beginMassDiscard(socket.id), cb));
+  socket.on('beginMassPass', ({ direction }, cb) =>
+    act(socket, () => rooms.beginMassPass(socket.id, direction), cb)
+  );
+  socket.on('selectPendingCard', ({ cardId }, cb) =>
+    act(socket, () => rooms.selectPendingCard(socket.id, cardId), cb)
+  );
 
-  socket.on('proposeTrade', ({ toId, offerCardId }, cb) => {
-    const result = rooms.proposeTrade(socket.id, toId, offerCardId);
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
-  });
+  socket.on('proposeTrade', ({ toId, offerCardId }, cb) =>
+    act(socket, () => rooms.proposeTrade(socket.id, toId, offerCardId), cb)
+  );
+  socket.on('respondTrade', ({ accept, responseCardId }, cb) =>
+    act(socket, () => rooms.respondTrade(socket.id, accept, responseCardId), cb)
+  );
+  socket.on('cancelTrade', (cb) => act(socket, () => rooms.cancelTrade(socket.id), cb));
 
-  socket.on('respondTrade', ({ accept, responseCardId }, cb) => {
-    const result = rooms.respondTrade(socket.id, accept, responseCardId);
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
-  });
+  socket.on('useSyringe', (payload, cb) =>
+    act(socket, () => rooms.useSyringe(socket.id, payload || {}), cb)
+  );
 
-  socket.on('cancelTrade', (cb) => {
-    const result = rooms.cancelTrade(socket.id);
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
+  // Legacy no-ops so old clients don't crash server
+  socket.on('discard', (_p, cb) => {
+    if (typeof cb === 'function') cb({ ok: false, error: '본작 규칙: 전원 버리기를 사용하세요.' });
   });
-
-  socket.on('useSyringe', (payload, cb) => {
-    const result = rooms.useSyringe(socket.id, payload || {});
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
-  });
-
-  socket.on('administer', ({ formulaId }, cb) => {
-    const result = rooms.administer(socket.id, formulaId);
-    if (result.error) {
-      if (typeof cb === 'function') cb({ ok: false, error: result.error });
-      return;
-    }
-    if (typeof cb === 'function') cb({ ok: true });
-    emitViews(result.room);
+  socket.on('administer', (_p, cb) => {
+    if (typeof cb === 'function')
+      cb({ ok: false, error: '본작 규칙: 손패가 마지막 한 장이 되면 자동 종료됩니다.' });
   });
 
   socket.on('disconnect', () => {
@@ -189,5 +160,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Antidote multiplayer server on :${PORT} (static client: ${hasClient})`);
+  console.log(`Antidote (official ruleset) on :${PORT} (static: ${hasClient})`);
 });

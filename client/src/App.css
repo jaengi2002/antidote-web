@@ -1365,6 +1365,22 @@ button.fchip:not(:disabled) {
   text-align: center;
 }
 
+/* Per-player workstation cards (official: do not stack — show all) */
+.ws-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  max-width: 160px;
+  min-height: 40px;
+}
+
+.opponent--me {
+  outline: 1px dashed rgba(201, 184, 150, 0.35);
+  border-radius: 10px;
+  padding: 6px;
+}
+
 /* Fine print */
 .fine {
   font-size: 0.72rem;

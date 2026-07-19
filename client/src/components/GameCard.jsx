@@ -61,21 +61,14 @@ export function GameCard({
     <>
       <div className="gcard__grain" aria-hidden />
       <div className="gcard__border">
+        {/* Single upright corner only — rotated BR corners blur text on screens */}
         {!isSyringe && (
-          <>
-            <div className="gcard__corner gcard__corner--tl">
-              <span className="gcard__rank">{rank}</span>
-              <span className="gcard__mini">
-                <SymbolGlyph symbol={symbol} />
-              </span>
-            </div>
-            <div className="gcard__corner gcard__corner--br">
-              <span className="gcard__rank">{rank}</span>
-              <span className="gcard__mini">
-                <SymbolGlyph symbol={symbol} />
-              </span>
-            </div>
-          </>
+          <div className="gcard__corner gcard__corner--tl">
+            <span className="gcard__rank">{rank}</span>
+            <span className="gcard__mini">
+              <SymbolGlyph symbol={symbol} />
+            </span>
+          </div>
         )}
 
         <div className="gcard__body">

@@ -6,6 +6,9 @@ export function SymbolGlyph({ symbol, className = '' }) {
     className: `sym ${className}`,
     'aria-hidden': true,
     fill: 'currentColor',
+    // Prefer sharp edges on UI icons; avoid blurry filter-based effects on parent
+    shapeRendering: 'geometricPrecision',
+    focusable: 'false',
   };
 
   switch (symbol) {

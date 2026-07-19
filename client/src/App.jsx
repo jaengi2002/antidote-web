@@ -778,7 +778,7 @@ export default function App() {
       {pending?.type === 'claudiusPick' && pending.needMe && (
         <div className="modal-backdrop">
           <div className="modal">
-            <h2>클라우디우스 — 마실 카드</h2>
+            <h2>속임수 왕 — 마실 카드</h2>
             <p>내 앞에서 카드 1장을 고르세요. 이 카드가 당신이 마신 약이 됩니다.</p>
             <div className="hand-fan">
               {(me?.workstation || []).map((slot) => (

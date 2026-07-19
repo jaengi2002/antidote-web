@@ -1,0 +1,17 @@
+{
+  "name": "antidote-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Antidote-style multiplayer web board game (learning project)",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "npm run start --prefix server",
+    "heroku-postbuild": "npm run install:all && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

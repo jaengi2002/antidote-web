@@ -1,0 +1,11 @@
+# Render Blueprint — https://render.com
+services:
+  - type: web
+    name: antidote-web
+    runtime: node
+    plan: free
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

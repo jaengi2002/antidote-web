@@ -29,8 +29,9 @@
   --focus: 0 0 0 3px rgba(176, 137, 43, 0.55);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --font-display: 'Noto Serif KR', 'Noto Serif CJK KR', Georgia, serif;
-  --font-ui: 'Noto Sans KR', 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  /* 부드러운 한글: 고운바탕(제목) + 고운돋움(본문) */
+  --font-display: 'Gowun Batang', 'Nanum Myeongjo', Georgia, serif;
+  --font-ui: 'Gowun Dodum', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
   font-family: var(--font-ui);
   color: var(--ink);
   text-rendering: optimizeLegibility;
@@ -55,9 +56,9 @@ body {
   background: #1a1410;
   color: var(--ink);
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.65;
   font-weight: 400;
-  /* Avoid browser zoom-related blurriness on fixed UI */
+  letter-spacing: -0.01em;
   text-size-adjust: 100%;
 }
 

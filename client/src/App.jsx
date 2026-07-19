@@ -618,7 +618,9 @@ export default function App() {
           </header>
           <div className="panel hands-reveal">
             <h2 style={{ fontFamily: 'var(--font-display)', marginTop: 0 }}>결과 · 점수</h2>
-            {state.players.map((p) => {
+            {state.players
+              .filter((p) => !p.isSilent && p.id !== '__SILENT__' && !String(p.name || '').includes('투명'))
+              .map((p) => {
               const sc = state.scores?.[p.id];
               return (
                 <div
@@ -627,7 +629,7 @@ export default function App() {
                 >
                   <h3>
                     {p.name}
-                    {p.isMe ? ' (나)' : ''} · {sc?.score ?? '?'}점
+                    {p.isMe ? ' (나)' : ''} · {sc?.score ?? 0}점
                     {sc?.survived ? ' · 생존' : ' · 사망'}
                     {state.allRomance?.[p.id] ? ` · ${state.allRomance[p.id].name}` : ''}
                   </h3>
@@ -660,7 +662,9 @@ export default function App() {
                   시리즈 누적 ({state.seriesRound}판)
                 </h3>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
-                  {state.players.map((p) => (
+                  {state.players
+                    .filter((p) => !p.isSilent && p.id !== '__SILENT__' && !String(p.name || '').includes('투명'))
+                    .map((p) => (
                     <li key={p.id}>
                       {p.name}: {(state.seriesTotals || {})[p.id] ?? 0}점
                     </li>

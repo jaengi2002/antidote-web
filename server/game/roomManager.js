@@ -1211,7 +1211,9 @@ class RoomManager {
       base.allWorkstations = {};
       base.allRomance = room.romance || {};
       base.allBadges = room.idBadges || {};
+      // 점수판에는 실제 좌석 플레이어만 (투명 플레이어 제외)
       for (const id of room.order) {
+        if (id === SILENT_ID || room.players[id]?.isSilent) continue;
         base.scores[id] = room.scores[id];
         base.allHands[id] = room.hands[id] || [];
         base.allWorkstations[id] = (room.workstations[id] || []).map((s) => ({
@@ -1219,6 +1221,8 @@ class RoomManager {
           card: s.card,
         }));
       }
+      // 종료 화면용: 투명 플레이어를 players 목록에서 제외
+      base.players = playersPublic.filter((p) => !p.isSilent && p.id !== SILENT_ID);
     }
 
     return base;

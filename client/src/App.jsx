@@ -189,7 +189,14 @@ export default function App() {
 
   const startGame = () => getSocket().emit('startGame', (res) => applyAck(res));
 
-  const others = useMemo(() => (state?.players || []).filter((p) => !p.isMe), [state]);
+  const others = useMemo(
+    () => (state?.players || []).filter((p) => !p.isMe && !p.isSilent),
+    [state]
+  );
+  const syringeTargets = useMemo(
+    () => (state?.players || []).filter((p) => !p.isMe),
+    [state]
+  );
   const me = useMemo(() => (state?.players || []).find((p) => p.isMe), [state]);
 
   const selectForPending = (cardId) => {
@@ -254,7 +261,7 @@ export default function App() {
 
   const hasSyringe = (state?.myHand || []).some((c) => c.type === 'syringe');
   const targetWs =
-    others.find((p) => p.id === stealTarget)?.workstation || [];
+    syringeTargets.find((p) => p.id === stealTarget)?.workstation || [];
 
   // ═══════════ LANDING ═══════════
   if (!state) {
@@ -267,8 +274,8 @@ export default function App() {
               해독제 <em>Antidote</em>
             </h1>
             <p className="landing-hero__lead">
-              본작과 같은 흐름: 전원 동시 버리기, 워크스테이션, 패스/1:1 거래, 주사기, 그리고
-              마지막 한 장.
+              번역 룰북 기준: 표1 세팅, 전원 동시 버리기, 워크스테이션, 패스/1:1, 주사기, 타임
+              아웃 점수. 2인은 투명 플레이어 포함.
             </p>
             <div className={`conn-pill ${connected ? 'is-on' : ''}`}>
               <span className="conn-pill__dot" />
@@ -356,7 +363,7 @@ export default function App() {
           </div>
           <div className="landing-grid">
             <div className="panel panel--dark">
-              <h2>좌석 ({state.players.length}/6)</h2>
+              <h2>좌석 ({state.players.length}/7)</h2>
               <div className="player-seats">
                 {state.players.map((p) => (
                   <div key={p.id} className={`seat ${p.isHost ? 'is-host' : ''}`}>
@@ -478,7 +485,9 @@ export default function App() {
           <h1>해독제 · 본작 규칙</h1>
           {state.config && (
             <span style={{ fontSize: 12, opacity: 0.65, marginLeft: 8 }}>
-              숫자 1–{state.config.maxNumber} · 주사기 {state.config.syringeN}
+              포뮬러 {state.config.formulas} · 숫자 1–{state.config.maxNumber} · 주사기{' '}
+              {state.config.syringes}
+              {state.silentMode ? ' · 투명P' : ''}
             </span>
           )}
         </div>
@@ -777,7 +786,7 @@ export default function App() {
                   있습니다.
                 </p>
                 <label>
-                  상대
+                  상대 (투명 플레이어와는 거래 불가)
                   <select value={tradeTarget} onChange={(e) => setTradeTarget(e.target.value)}>
                     <option value="">선택…</option>
                     {others
@@ -819,7 +828,7 @@ export default function App() {
                   </button>
                 </div>
                 <label>
-                  대상
+                  대상 (투명 플레이어 포함 가능)
                   <select
                     value={stealTarget}
                     onChange={(e) => {
@@ -828,7 +837,7 @@ export default function App() {
                     }}
                   >
                     <option value="">선택…</option>
-                    {others.map((p) => (
+                    {syringeTargets.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} (손 {p.handCount} · WS {(p.workstation || []).length})
                       </option>

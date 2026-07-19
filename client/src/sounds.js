@@ -1,6 +1,25 @@
 /** Tiny UI sounds via Web Audio API (no asset files). */
 
 let ctx = null;
+let muted = false;
+
+export function setMuted(v) {
+  muted = !!v;
+  try {
+    localStorage.setItem('antidote_mute', muted ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getMuted() {
+  try {
+    if (localStorage.getItem('antidote_mute') === '1') return true;
+  } catch {
+    /* ignore */
+  }
+  return muted;
+}
 
 function getCtx() {
   if (typeof window === 'undefined') return null;
@@ -13,6 +32,7 @@ function getCtx() {
 }
 
 function beep(freq, dur, type = 'sine', gain = 0.04) {
+  if (muted || getMuted()) return;
   try {
     const c = getCtx();
     if (!c) return;

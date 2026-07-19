@@ -2,7 +2,7 @@
 import { io } from 'socket.io-client';
 import { CardBack, FormulaChip, GameCard } from './components/GameCard';
 import { RulesPanel } from './components/RulesPanel';
-import { sfx } from './sounds';
+import { sfx, getMuted, setMuted as setMutedStore } from './sounds';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || undefined;
@@ -77,9 +77,26 @@ export default function App() {
   const [wsPick, setWsPick] = useState(null);
   const [tradeResponseCard, setTradeResponseCard] = useState(null);
   const [showRules, setShowRules] = useState(false);
-  const prevStatusRef = useRef(null);
+  const [muted, setMutedState] = useState(() => getMuted());
+  const toastTimer = useRef(null);
 
   const formulas = state?.formulas?.length ? state.formulas : SAMPLE_FORMULAS;
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMutedState(next);
+    setMutedStore(next);
+  };
+
+  const showToast = useCallback((msg, kind = 'info') => {
+    if (kind === 'error') setError(msg);
+    else setInfo(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => {
+      setError('');
+      setInfo('');
+    }, 3200);
+  }, []);
 
   const persistSession = useCallback(
     (payload) => {
@@ -105,7 +122,7 @@ export default function App() {
   const applyAck = useCallback(
     (res) => {
       if (!res?.ok) {
-        setError(res?.error || '요청 실패');
+        showToast(res?.error || '요청 실패', 'error');
         return false;
       }
       if (res.sessionToken) persistSession(res);
@@ -113,7 +130,7 @@ export default function App() {
       setError('');
       return true;
     },
-    [persistSession]
+    [persistSession, showToast]
   );
 
   const tryReconnect = useCallback(() => {
@@ -210,8 +227,7 @@ export default function App() {
   const copyInvite = (code) => {
     const url = `${window.location.origin}${window.location.pathname}?room=${code}`;
     navigator.clipboard?.writeText(url);
-    setInfo('초대 링크를 복사했습니다. 친구에게 보내세요.');
-    setTimeout(() => setInfo(''), 2000);
+    showToast('초대 링크를 복사했습니다');
   };
 
   const leaveRoom = () => {
@@ -289,9 +305,29 @@ export default function App() {
 
   const copyCode = (code) => {
     navigator.clipboard?.writeText(code);
-    setInfo('방 코드 복사됨');
-    setTimeout(() => setInfo(''), 1500);
+    showToast('방 코드를 복사했습니다');
   };
+
+  const chrome = (
+    <div className="chrome-bar" aria-label="빠른 설정">
+      <button
+        type="button"
+        className={`btn ${muted ? '' : 'is-on'}`}
+        onClick={toggleMute}
+        aria-pressed={!muted}
+        title={muted ? '소리 켜기' : '소리 끄기'}
+      >
+        {muted ? '소리 끔' : '소리 켬'}
+      </button>
+    </div>
+  );
+
+  const toasts = (
+    <div className="toast-stack" aria-live="polite">
+      {error && <div className="toast toast--error">{error}</div>}
+      {info && !error && <div className="toast toast--info">{info}</div>}
+    </div>
+  );
 
   const hasSyringe = (state?.myHand || []).some((c) => c.type === 'syringe');
   const targetWs =
@@ -301,21 +337,37 @@ export default function App() {
   if (!state) {
     return (
       <div className="app app--landing">
+        <a className="skip-link" href="#main-play">
+          플레이로 건너뛰기
+        </a>
+        {chrome}
+        {toasts}
         <div className="wrap">
           <header className="landing-hero">
-            <p className="landing-hero__badge">Official ruleset · 2–6 players</p>
+            <p className="landing-hero__badge">2–7인 · 방 코드 멀티</p>
             <h1>
               해독제 <em>Antidote</em>
             </h1>
             <p className="landing-hero__lead">
-              전원 같이 버리기, 각자 내 앞, 패스·맞교환, 주사, 마지막 한 장. 약은 해골·물방울 같은
-              쉬운 별명. 확장: 속임수 약 · 비밀 목표.
+              독이 퍼진 실험실. 마지막에 손에 남은 한 장이 진짜 해독제면 살아남습니다. 버리기,
+              돌리기, 바꾸기, 주사로 정보를 모으세요.
             </p>
+            <div className="landing-features">
+              <span>실시간 멀티</span>
+              <span>초대 링크</span>
+              <span>봇 연습</span>
+              <span>관전 지원</span>
+            </div>
             <div className={`conn-pill ${connected ? 'is-on' : ''}`}>
               <span className="conn-pill__dot" />
-              {connected ? '서버 연결됨' : '서버 연결 중…'}
+              {connected ? '서버 연결됨' : '서버 연결 중… (첫 접속은 수십 초 걸릴 수 있어요)'}
               {reconnecting ? ' · 재접속' : ''}
             </div>
+            {!connected && (
+              <p className="wake-hint">
+                무료 호스팅은 잠깐 잠들 수 있습니다. 연결될 때까지 잠시만 기다려 주세요.
+              </p>
+            )}
           </header>
 
           <div className="sample-hand" aria-hidden>
@@ -324,17 +376,17 @@ export default function App() {
             ))}
           </div>
 
-          <div className="landing-grid">
+          <div className="landing-grid" id="main-play">
             <div>
               {session?.sessionToken && (
-                <div className="panel panel--dark" style={{ marginBottom: '1rem' }}>
+                <div className="panel panel--dark panel--elevated" style={{ marginBottom: '1rem' }}>
                   <h2>이어하기</h2>
                   <p style={{ margin: '0 0 0.75rem', opacity: 0.75, fontSize: '0.9rem' }}>
                     방 <strong style={{ letterSpacing: '0.15em' }}>{session.roomCode || '?'}</strong>
                   </p>
                   <div className="btn-row">
                     <button type="button" className="btn btn--gold" onClick={tryReconnect} disabled={!connected}>
-                      테이블로
+                      테이블로 돌아가기
                     </button>
                     <button type="button" className="btn btn--ghost" onClick={clearSessionLocal}>
                       세션 삭제
@@ -342,36 +394,52 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <div className="panel">
+              <div className="panel panel--elevated">
                 <h2>테이블 잡기</h2>
                 <label>
                   닉네임
-                  <input value={name} maxLength={16} onChange={(e) => saveName(e.target.value)} />
+                  <input
+                    value={name}
+                    maxLength={16}
+                    onChange={(e) => saveName(e.target.value)}
+                    placeholder="표시 이름"
+                    autoComplete="nickname"
+                    enterKeyHint="done"
+                  />
                 </label>
-                <button type="button" className="btn btn--primary" onClick={createRoom} disabled={!connected}>
+                <button type="button" className="btn btn--primary" onClick={createRoom} disabled={!connected || !name.trim()}>
                   새 방 만들기
                 </button>
-                <div className="divider">또는 코드 입장</div>
+                <div className="divider">또는 코드·링크로 입장</div>
                 <label>
                   방 코드
                   <input
                     value={joinCode}
                     onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                     maxLength={6}
+                    placeholder="ABCD"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
                   />
                 </label>
-                <button type="button" className="btn" style={{ width: '100%' }} onClick={joinRoom} disabled={!connected}>
+                <button
+                  type="button"
+                  className="btn btn--block"
+                  onClick={joinRoom}
+                  disabled={!connected || !name.trim() || !joinCode.trim()}
+                >
                   입장
                 </button>
-                {error && <p className="msg-error">{error}</p>}
-                {info && <p className="msg-info">{info}</p>}
               </div>
             </div>
             <div className="panel">
               <RulesPanel />
             </div>
           </div>
-          <p className="fine">학습용 · Bellwether Games Antidote 룰 준수 · 아트 자체 제작</p>
+          <p className="fine">
+            학습용 웹 구현 · 본작 Antidote 규칙 기반 · 아트·명칭은 자체 테마
+          </p>
         </div>
       </div>
     );
@@ -388,6 +456,8 @@ export default function App() {
     const canStart = connectedCount >= 2;
     return (
       <div className="app lobby-shell">
+        {chrome}
+        {toasts}
         <div className="wrap">
           <div className="table-topbar" style={{ borderRadius: 12, marginBottom: '1rem' }}>
             <h1>대기실</h1>
@@ -404,9 +474,8 @@ export default function App() {
               </button>
             </div>
           </div>
-          {info && <p className="msg-info" style={{ marginBottom: 8 }}>{info}</p>}
           <div className="landing-grid">
-            <div className="panel panel--dark">
+            <div className="panel panel--dark panel--elevated">
               <h2>좌석 ({state.players.length}/7)</h2>
               <div className="player-seats">
                 {state.players.map((p) => (
@@ -503,7 +572,6 @@ export default function App() {
                   호스트 시작 대기… (방 만든 사람에게만 「게임 시작」이 보입니다)
                 </p>
               )}
-              {error && <p className="msg-error">{error}</p>}
             </div>
             <div className="panel">
               <RulesPanel compact />
@@ -520,6 +588,8 @@ export default function App() {
     const trueF = formulas.find((f) => f.id === state.antidoteFormulaId);
     return (
       <div className="app end-screen">
+        {chrome}
+        {toasts}
         <div className="wrap">
           <header className="end-screen__hero">
             <h1 className={iWon ? 'is-win' : ''}>{iWon ? '생존' : '실험 종료'}</h1>
@@ -628,6 +698,8 @@ export default function App() {
 
   return (
     <div className="app app--table">
+      {chrome}
+      {toasts}
       <header className="table-topbar">
         <div>
           <h1>해독제</h1>
@@ -665,16 +737,6 @@ export default function App() {
       {!connected && (
         <div className="banner banner--warn">
           오프라인 — 재연결 중… 같은 브라우저면 세션으로 자리 복구됩니다.
-        </div>
-      )}
-      {error && (
-        <div className="banner banner--error" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
-          {error}
-        </div>
-      )}
-      {info && (
-        <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
-          {info}
         </div>
       )}
 

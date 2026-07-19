@@ -955,10 +955,10 @@ export default function App() {
             <div className="console__tabs">
               {[
                 ['discard', '1. 버리기'],
-                ['pass', '2A. 패스'],
-                ['trade', '2B. 1:1'],
-                ['syringe', '3. 주사'],
-                ...(state.canDrawRomance ? [['romance', '4. 비밀 목표']] : []),
+                ['pass', '2. 패스'],
+                ['trade', '3. 1:1'],
+                ['syringe', '4. 주사'],
+                ...(state.canDrawRomance ? [['romance', '5. 비밀 목표']] : []),
               ].map(([id, label]) => (
                 <button
                   key={id}

@@ -25,13 +25,15 @@ export function RulesPanel({ compact = false }) {
           </span>
         </li>
         <li>
-          <strong>2. 연구 거래</strong>
-          <span>
-            (A) 전원 왼/오른쪽으로 1장 패스 · (B) 1:1 교환. 거래가 안 되면 다른 행동.
-          </span>
+          <strong>2. 패스</strong>
+          <span>전원이 손의 카드 1장을 왼쪽 또는 오른쪽으로 동시에 돌립니다.</span>
         </li>
         <li>
-          <strong>3. 주사</strong>
+          <strong>3. 1:1</strong>
+          <span>한 사람과 손패 카드 1장씩 맞바꿉니다. 안 되면 다른 행동을 고릅니다.</span>
+        </li>
+        <li>
+          <strong>4. 주사</strong>
           <span>
             상대 손(랜덤) 또는 상대 <strong>내 앞</strong>(선택)에서 1장. 훔친 자리에 주사를
             놓습니다.

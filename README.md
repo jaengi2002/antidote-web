@@ -46,11 +46,14 @@ npm start              # server가 client/dist 서빙 + Socket.IO
 ### Railway / Render 예시
 
 1. 이 저장소 루트를 서비스 루트로 연결  
-2. **Build command:** `npm run install:all && npm run build`  
+2. **Build command (권장):** `npm install && npm run build`  
+   - 루트 `postinstall`이 `server`/`client` 의존성을 같이 설치합니다.  
+   - 또는: `npm run install:all && npm run build`  
 3. **Start command:** `npm start`  
-4. 공개 URL로 접속 → 방 만들기 → 친구에게 4글자 코드 공유  
+4. **Node:** 20.x (`.node-version` / `engines`)  
+5. 공개 URL로 접속 → 방 만들기 → 친구에게 4글자 코드 공유  
 
-Render 등에서 Node 버전 18+ 를 선택하세요.
+> Render가 저장소 권한이 없다고 뜨면: Render Dashboard → Account Settings → GitHub → 저장소 접근 허용.
 
 ## 플레이 요약
 

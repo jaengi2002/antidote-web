@@ -4,14 +4,15 @@
   "private": true,
   "description": "Antidote-style multiplayer web board game (learning project)",
   "scripts": {
+    "postinstall": "npm install --prefix server && npm install --prefix client",
     "install:all": "npm install --prefix server && npm install --prefix client",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
-    "build": "npm run build --prefix client",
+    "build": "npm install --prefix client && npm run build --prefix client",
     "start": "npm run start --prefix server",
     "heroku-postbuild": "npm run install:all && npm run build"
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   }
 }

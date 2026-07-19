@@ -32,21 +32,38 @@ export function GameCard({
 
   const isSyringe = card.type === 'syringe';
   const isX = card.type === 'x';
-  const f = isSyringe ? null : formulaMeta(formulas, card.formulaId);
-  const color = f?.color || '#2c3e50';
-  const soft = f?.colorSoft || '#eef2f5';
+  const isPlacebo = card.type === 'placebo';
+  const isClinical = card.type === 'clinical';
+  const isSpecial = isSyringe || isPlacebo || isClinical;
+  const f = isSpecial ? null : formulaMeta(formulas, card.formulaId);
+  const color = f?.color || (isPlacebo ? '#6b7280' : isClinical ? '#2563eb' : '#2c3e50');
+  const soft = f?.colorSoft || (isPlacebo ? '#f3f4f6' : isClinical ? '#dbeafe' : '#eef2f5');
   const ink = f?.ink || '#1a1a1a';
-  const symbol = card.symbol || f?.symbol || 'skull';
-  const rank = isX ? 'X' : isSyringe ? 'S' : String(card.value ?? '');
-  const name = isSyringe ? '주사기' : f?.name || card.name || card.label;
-  const nameEn = isSyringe ? 'SYRINGE' : f?.nameEn || card.nameEn || '';
+  const symbol = card.symbol || f?.symbol || (isPlacebo ? 'bio' : isClinical ? 'molecule' : 'skull');
+  const rank = isX ? 'X' : isSyringe ? 'S' : isPlacebo ? 'P' : isClinical ? 'C' : String(card.value ?? '');
+  const name = isSyringe
+    ? '주사기'
+    : isPlacebo
+      ? '플라시보'
+      : isClinical
+        ? '임상 실험'
+        : f?.name || card.name || card.label;
+  const nameEn = isSyringe
+    ? 'SYRINGE'
+    : isPlacebo
+      ? 'PLACEBO'
+      : isClinical
+        ? 'CLINICAL'
+        : f?.nameEn || card.nameEn || '';
 
   const classNames = [
     'gcard',
     `gcard--${size}`,
     isSyringe ? 'gcard--syringe' : '',
+    isPlacebo ? 'gcard--syringe' : '',
+    isClinical ? 'gcard--syringe' : '',
     isX ? 'gcard--toxin' : '',
-    !isSyringe && !isX ? 'gcard--number' : '',
+    !isSpecial && !isX ? 'gcard--number' : '',
     selected ? 'is-selected' : '',
     dimmed ? 'is-dimmed' : '',
     interactive || onClick ? 'is-interactive' : '',
@@ -54,12 +71,12 @@ export function GameCard({
     .filter(Boolean)
     .join(' ');
 
-  const style = isSyringe
+  const style = isSpecial
     ? {
-        '--card-ink': '#1a2332',
-        '--card-accent': '#3d5a4c',
-        '--card-soft': '#e8efe9',
-        '--card-edge': '#2a4035',
+        '--card-ink': ink,
+        '--card-accent': color,
+        '--card-soft': soft,
+        '--card-edge': color,
       }
     : {
         '--card-ink': ink,
@@ -83,15 +100,16 @@ export function GameCard({
         )}
 
         <div className="gcard__body">
-          {isSyringe ? (
+          {isSpecial ? (
             <>
-              <div className="gcard__syringe-badge">RESEARCH</div>
-              <div className="gcard__hero gcard__hero--syringe">
-                <SymbolGlyph symbol="syringe" />
+              <div className="gcard__syringe-badge">
+                {isSyringe ? 'TOOL' : isPlacebo ? 'PLACEBO' : 'TRIAL'}
               </div>
-              <div className="gcard__title">주사기</div>
-              <div className="gcard__subtitle">SYRINGE</div>
-              <p className="gcard__hint">버린 카드 회수 · 손패 훔치기</p>
+              <div className="gcard__hero gcard__hero--syringe">
+                <SymbolGlyph symbol={isSyringe ? 'syringe' : symbol} />
+              </div>
+              <div className="gcard__title">{name}</div>
+              <div className="gcard__subtitle">{nameEn}</div>
             </>
           ) : (
             <>

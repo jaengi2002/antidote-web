@@ -121,6 +121,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('startGame', (cb) => act(socket, () => rooms.startGame(socket.id), cb));
+  socket.on('setExpansions', (payload, cb) =>
+    act(socket, () => rooms.setExpansions(socket.id, payload || {}), cb)
+  );
 
   // Official actions
   socket.on('beginMassDiscard', (cb) => act(socket, () => rooms.beginMassDiscard(socket.id), cb));
@@ -129,6 +132,19 @@ io.on('connection', (socket) => {
   );
   socket.on('selectPendingCard', ({ cardId }, cb) =>
     act(socket, () => rooms.selectPendingCard(socket.id, cardId), cb)
+  );
+  socket.on('clinicalChooseDirection', ({ direction }, cb) =>
+    act(socket, () => rooms.clinicalChooseDirection(socket.id, direction), cb)
+  );
+  socket.on('placeboSwap', (payload, cb) =>
+    act(socket, () => rooms.placeboSwap(socket.id, payload || {}), cb)
+  );
+  socket.on('drawRomance', (cb) => act(socket, () => rooms.drawRomance(socket.id), cb));
+  socket.on('setOthelloLover', ({ loverId }, cb) =>
+    act(socket, () => rooms.setOthelloLover(socket.id, loverId), cb)
+  );
+  socket.on('claudiusPickWs', ({ workstationIndex }, cb) =>
+    act(socket, () => rooms.claudiusPickWs(socket.id, workstationIndex), cb)
   );
 
   socket.on('proposeTrade', ({ toId, offerCardId }, cb) =>

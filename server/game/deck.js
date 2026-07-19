@@ -72,15 +72,25 @@ function shuffle(array) {
 
 /**
  * @param {string[]} humanIds - real player ids (2–7)
- * @returns setup including optional silentId for 2p
+ * @param {{ placebo?: boolean, romance?: boolean }} [options]
  */
-function setupGame(humanIds) {
+function setupGame(humanIds, options = {}) {
+  const {
+    table5,
+    makeExpansionCards,
+    makeIdBadges,
+    makeRomanceDeck,
+  } = require('./expansions');
+
   const humans = humanIds.length;
   if (humans < 2 || humans > 7) throw new Error('플레이어는 2~7명이어야 합니다.');
 
   const cfg = table1(humans);
   const formulas = activeFormulas(cfg.formulas);
   const silentMode = humans === 2;
+  // 확장: 2인(투명) 규칙과 동시 사용 금지 (룰북)
+  const placeboOn = !!options.placebo && !silentMode;
+  const romanceOn = !!options.romance && !silentMode;
   const seatIds = silentMode ? [...humanIds, '__SILENT__'] : [...humanIds];
 
   // 1–2. X 분리, 하나 봉인
@@ -89,26 +99,24 @@ function setupGame(humanIds) {
   const antidoteCard = shuffledX[0];
   const remainingX = shuffledX.slice(1);
 
-  // 3. 주사기 + 남은 X, 시드 딜
-  const syringes = [];
+  // 3. 기본 주사기 + 남은 X 시드 (표5 추가 주사기는 숫자 덱에 섞음)
+  const baseSyringes = [];
   for (let i = 0; i < cfg.syringes; i++) {
-    syringes.push(makeCard({ id: `SYR-${i + 1}`, type: 'syringe' }));
+    baseSyringes.push(makeCard({ id: `SYR-${i + 1}`, type: 'syringe' }));
   }
-  const seedPool = shuffle([...remainingX, ...syringes]);
+  const seedPool = shuffle([...remainingX, ...baseSyringes]);
   const hands = {};
   for (const id of seatIds) hands[id] = [];
 
   let idx = 0;
-  const seedEach = silentMode ? 2 : cfg.seedDeal; // 2p: 인간 2장씩, 투명은 아래에서 맞춤
   if (silentMode) {
-    // 3인 구성: 시드 풀을 3석에 2장씩 (투명 포함) — 규칙: 3명처럼 준비
     for (let r = 0; r < 2; r++) {
       for (const id of seatIds) {
         if (idx < seedPool.length) hands[id].push(seedPool[idx++]);
       }
     }
   } else {
-    for (let r = 0; r < seedEach; r++) {
+    for (let r = 0; r < cfg.seedDeal; r++) {
       for (const id of seatIds) {
         if (idx < seedPool.length) hands[id].push(seedPool[idx++]);
       }
@@ -116,7 +124,7 @@ function setupGame(humanIds) {
   }
   const leftoverSeed = seedPool.slice(idx);
 
-  // 4. 숫자 카드 1..maxNumber
+  // 4. 숫자 카드 + (플라시보 시) 표5 카드
   const numberCards = [];
   for (const f of formulas) {
     for (let v = 1; v <= cfg.maxNumber; v++) {
@@ -124,16 +132,35 @@ function setupGame(humanIds) {
     }
   }
 
-  const rest = shuffle([...leftoverSeed, ...numberCards]);
-  // 목표 핸드 크기까지 균등 분배 (표1 시작 핸드)
+  let expansionInDeck = [];
+  let idBadges = {};
+  if (placeboOn) {
+    const t5 = table5(humans);
+    expansionInDeck = makeExpansionCards(t5);
+    const badges = shuffle(makeIdBadges(formulas.map((f) => f.id)));
+    const assigned = badges.slice(0, humans);
+    humanIds.forEach((pid, i) => {
+      idBadges[pid] = assigned[i] || null;
+    });
+  }
+
+  const rest = shuffle([...leftoverSeed, ...numberCards, ...expansionInDeck]);
   idx = 0;
   let guard = 0;
-  while (idx < rest.length && guard < 500) {
+  const targetHand = cfg.handSize;
+  while (idx < rest.length && guard < 800) {
     guard += 1;
     let dealt = false;
     for (const id of seatIds) {
       if (idx >= rest.length) break;
-      if (hands[id].length < cfg.handSize) {
+      if (hands[id].length < targetHand) {
+        hands[id].push(rest[idx++]);
+        dealt = true;
+      }
+    }
+    if (!dealt) {
+      for (const id of seatIds) {
+        if (idx >= rest.length) break;
         hands[id].push(rest[idx++]);
         dealt = true;
       }
@@ -141,32 +168,36 @@ function setupGame(humanIds) {
     if (!dealt) break;
   }
 
-  // 안전: 모두 동일 장수
   const sizes = seatIds.map((id) => hands[id].length);
   if (new Set(sizes).size !== 1) {
-    // 남는 카드로 최소 인원부터 맞춤
     const min = Math.min(...sizes);
     for (const id of seatIds) {
-      while (hands[id].length > min) {
-        rest.push(hands[id].pop());
-      }
+      while (hands[id].length > min) rest.push(hands[id].pop());
     }
   }
 
   const workstations = {};
   for (const id of seatIds) workstations[id] = [];
 
+  let romanceDeck = [];
+  if (romanceOn) romanceDeck = shuffle(makeRomanceDeck());
+
   return {
     antidoteFormulaId: antidoteCard.formulaId,
     hands,
     workstations,
     formulas,
+    idBadges,
+    romanceDeck,
     config: {
       ...cfg,
       humanCount: humans,
       silentMode,
       silentId: silentMode ? '__SILENT__' : null,
       playerCount: humans,
+      placebo: placeboOn,
+      romance: romanceOn,
+      syringes: cfg.syringes,
     },
     seatIds,
   };

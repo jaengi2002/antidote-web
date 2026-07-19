@@ -381,6 +381,53 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              {iAmHost && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: 13, opacity: 0.8, margin: '0 0 8px' }}>
+                    확장 (2인이면 시작 시 자동 OFF)
+                  </p>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, textTransform: 'none', letterSpacing: 0, fontSize: 14 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!state.expansionPlacebo}
+                      onChange={(e) =>
+                        getSocket().emit(
+                          'setExpansions',
+                          {
+                            placebo: e.target.checked,
+                            romance: !!state.expansionRomance,
+                          },
+                          (res) => applyAck(res)
+                        )
+                      }
+                    />
+                    플라시보 효과 (ID·임상·플라시보)
+                  </label>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', textTransform: 'none', letterSpacing: 0, fontSize: 14 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!state.expansionRomance}
+                      onChange={(e) =>
+                        getSocket().emit(
+                          'setExpansions',
+                          {
+                            placebo: !!state.expansionPlacebo,
+                            romance: e.target.checked,
+                          },
+                          (res) => applyAck(res)
+                        )
+                      }
+                    />
+                    연구소 로맨스
+                  </label>
+                </div>
+              )}
+              {!iAmHost && (
+                <p style={{ fontSize: 13, opacity: 0.75 }}>
+                  확장: 플라시보 {state.expansionPlacebo ? 'ON' : 'OFF'} · 로맨스{' '}
+                  {state.expansionRomance ? 'ON' : 'OFF'}
+                </p>
+              )}
               {iAmHost ? (
                 <button
                   type="button"
@@ -388,7 +435,7 @@ export default function App() {
                   onClick={startGame}
                   disabled={state.players.filter((p) => p.connected).length < 2}
                 >
-                  본작 규칙으로 시작
+                  게임 시작
                 </button>
               ) : (
                 <p style={{ opacity: 0.65 }}>호스트 시작 대기…</p>
@@ -448,6 +495,8 @@ export default function App() {
                   <h3>
                     {p.name}
                     {p.isMe ? ' (나)' : ''} · {sc?.score ?? '?'}점
+                    {sc?.survived ? ' · 생존' : ' · 사망'}
+                    {state.allRomance?.[p.id] ? ` · ${state.allRomance[p.id].name}` : ''}
                   </h3>
                   <div className="hand-fan" style={{ minHeight: 0, justifyContent: 'flex-start' }}>
                     {sc?.lastCard && (
@@ -465,6 +514,13 @@ export default function App() {
                 </div>
               );
             })}
+            {(state.scoreNotes || []).length > 0 && (
+              <ul style={{ fontSize: 13, color: 'var(--ink-soft)' }}>
+                {state.scoreNotes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            )}
             <button type="button" className="btn btn--primary" onClick={leaveRoom}>
               로비로
             </button>
@@ -474,6 +530,7 @@ export default function App() {
     );
   }
 
+  // ending_claudius uses playing UI with modal
   // ═══════════ PLAYING ═══════════
   const turnName = state.players.find((p) => p.id === state.turnPlayerId)?.name || '?';
   const pending = state.pending;
@@ -627,6 +684,123 @@ export default function App() {
         </div>
       )}
 
+      {pending?.type === 'clinicalDirection' && pending.amChooser && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>임상 실험 — 방향</h2>
+            <p>전원 지정한 방향의 워크스테이션에서 카드 1장을 손으로 가져옵니다.</p>
+            <div className="btn-row">
+              {['left', 'right', 'self'].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  className="btn btn--primary"
+                  style={{ flex: 1 }}
+                  onClick={() =>
+                    getSocket().emit('clinicalChooseDirection', { direction: d }, (res) =>
+                      applyAck(res)
+                    )
+                  }
+                >
+                  {d === 'left' ? '왼쪽 WS' : d === 'right' ? '오른쪽 WS' : '본인 WS'}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pending?.type === 'clinicalDirection' && !pending.amChooser && (
+        <div className="banner banner--info" style={{ margin: '0.5rem auto', maxWidth: 960 }}>
+          {pending.name} 님이 임상 실험 방향을 고르는 중…
+        </div>
+      )}
+
+      {state.pendingPlaceboSwap?.active && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>플라시보 발동!</h2>
+            <p>손패 카드와 워크스테이션 카드를 1장씩 고르면 교환합니다. 패스도 가능합니다.</p>
+            <div className="hand-fan">
+              {(state.myHand || []).map((c) => (
+                <GameCard
+                  key={c.id}
+                  card={c}
+                  formulas={formulas}
+                  size="md"
+                  selected={selectedCardId === c.id}
+                  onClick={() => setSelectedCardId(c.id)}
+                />
+              ))}
+            </div>
+            <p style={{ marginTop: 8 }}>내 워크스테이션 (교환할 칸 터치)</p>
+            <div className="hand-fan">
+              {(me?.workstation || []).map((slot) => (
+                <GameCard
+                  key={slot.index}
+                  card={slot.card}
+                  formulas={formulas}
+                  size="sm"
+                  selected={wsPick === slot.index}
+                  onClick={() => setWsPick(slot.index)}
+                />
+              ))}
+            </div>
+            <div className="btn-row" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn--primary"
+                style={{ flex: 1 }}
+                onClick={() =>
+                  getSocket().emit(
+                    'placeboSwap',
+                    { handCardId: selectedCardId, workstationIndex: wsPick },
+                    (res) => applyAck(res)
+                  )
+                }
+              >
+                교환
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() =>
+                  getSocket().emit('placeboSwap', {}, (res) => applyAck(res))
+                }
+              >
+                패스
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pending?.type === 'claudiusPick' && pending.needMe && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>클라우디우스 — 마실 카드</h2>
+            <p>워크스테이션에서 카드 1장을 고르세요. 이 카드가 당신이 마신 약이 됩니다.</p>
+            <div className="hand-fan">
+              {(me?.workstation || []).map((slot) => (
+                <GameCard
+                  key={slot.index}
+                  card={slot.card}
+                  formulas={formulas}
+                  size="md"
+                  onClick={() =>
+                    getSocket().emit(
+                      'claudiusPickWs',
+                      { workstationIndex: slot.index },
+                      (res) => applyAck(res)
+                    )
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Felt: opponents + workstations */}
       <div className="felt">
         <p className="felt__section-label">연구자들 · 워크스테이션</p>
@@ -705,9 +879,39 @@ export default function App() {
               내 손패 · {me?.name} ({(state.myHand || []).length}장)
             </h2>
             <span className="hand-dock__hint">
-              마지막 한 장이 해독제 공식이어야 합니다
+              {state.myRomance
+                ? `로맨스: ${state.myRomance.name}`
+                : '마지막 한 장이 해독제 공식이어야 합니다'}
+              {state.myBadge
+                ? ` · ID: ${formulas.find((f) => f.id === state.myBadge.formulaId)?.name || state.myBadge.formulaId}`
+                : ''}
             </span>
           </div>
+          {state.myRomance && (
+            <p className="hand-dock__hint" style={{ marginBottom: 8 }}>
+              {state.myRomance.summary}
+              {state.myRomance.id === 'othello' && (
+                <>
+                  {' '}
+                  <select
+                    value={state.othelloLoverId || ''}
+                    onChange={(e) =>
+                      getSocket().emit('setOthelloLover', { loverId: e.target.value }, (res) =>
+                        applyAck(res)
+                      )
+                    }
+                  >
+                    <option value="">애인 지정…</option>
+                    {others.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </p>
+          )}
           <div className="hand-fan">
             {(state.myHand || []).map((c) => (
               <GameCard
@@ -736,9 +940,10 @@ export default function App() {
             <div className="console__tabs">
               {[
                 ['discard', '1. 버리기'],
-                ['pass', '2A. 전원 패스'],
-                ['trade', '2B. 1:1 거래'],
+                ['pass', '2A. 패스'],
+                ['trade', '2B. 1:1'],
                 ['syringe', '3. 주사기'],
+                ...(state.canDrawRomance ? [['romance', '4. 로맨스']] : []),
               ].map(([id, label]) => (
                 <button
                   key={id}
@@ -857,6 +1062,22 @@ export default function App() {
                   disabled={!hasSyringe}
                 >
                   주사기 사용
+                </button>
+              </>
+            )}
+
+            {action === 'romance' && (
+              <>
+                <p className="console__help">
+                  연구소 로맨스 카드를 1장 뽑습니다 (게임당 1회, 비공개). 덱{' '}
+                  {state.romanceDeckCount ?? 0}장.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--gold"
+                  onClick={() => getSocket().emit('drawRomance', (res) => applyAck(res))}
+                >
+                  로맨스 카드 뽑기
                 </button>
               </>
             )}
